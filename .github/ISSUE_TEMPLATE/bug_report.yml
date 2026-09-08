@@ -1,0 +1,35 @@
+name: Bug report
+description: Report a reproducible problem
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: describe
+    attributes:
+      label: Description
+      description: What happened and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exact commands or URLs to reproduce the issue.
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python and Node versions, Docker Compose version.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Sanitized logs without credentials or MEGA account data.
