@@ -32,7 +32,7 @@ def list_buckets(session: Session, snapshot_id: int) -> list[dict]:
         .where(Title.snapshot_id == snapshot_id)
         .group_by(Title.letter)
     ).all()
-    buckets = [{"letter": l, "titles": n, "size_bytes": s or 0} for l, n, s in rows]
+    buckets = [{"letter": letra, "titles": n, "size_bytes": s or 0} for letra, n, s in rows]
     buckets.sort(key=lambda b: LETTER_ORDER.get(b["letter"], 99))
     return buckets
 
@@ -104,9 +104,7 @@ def get_title_node(session: Session, snapshot_id: int, node_id: int) -> Node | N
     ).scalar_one_or_none()
 
 
-def title_detail(
-    session: Session, snapshot_id: int, slug: str
-) -> tuple[Title | None, dict | None]:
+def title_detail(session: Session, snapshot_id: int, slug: str) -> tuple[Title | None, dict | None]:
     """Devuelve (Title, estructura) con versiones y archivos del título."""
     title = session.execute(
         select(Title).where(Title.snapshot_id == snapshot_id, Title.slug == slug)
@@ -120,11 +118,15 @@ def title_detail(
 
     # Subárbol del título (todas las profundidades), en orden de documento.
     like = _like_escaped(node.path) + "/%"
-    rows = session.execute(
-        select(Node)
-        .where(Node.snapshot_id == snapshot_id, Node.path.like(like, escape="\\"))
-        .order_by(Node.node_order)
-    ).scalars().all()
+    rows = (
+        session.execute(
+            select(Node)
+            .where(Node.snapshot_id == snapshot_id, Node.path.like(like, escape="\\"))
+            .order_by(Node.node_order)
+        )
+        .scalars()
+        .all()
+    )
 
     by_parent: dict[int | None, list[Node]] = {}
     for r in rows:
@@ -139,29 +141,43 @@ def title_detail(
         out = []
         for r in by_parent.get(parent_id, []):
             if r.kind == "file":
-                out.append({"name": r.name, "size": r.size, "ext": r.ext,
-                            "path": r.path[len(node.path) + 1:],
-                            "full_path": r.path})
+                out.append(
+                    {
+                        "name": r.name,
+                        "size": r.size,
+                        "ext": r.ext,
+                        "path": r.path[len(node.path) + 1 :],
+                        "full_path": r.path,
+                    }
+                )
             else:
                 out.extend(walk_files(r.id))
         return out
 
     for child in by_parent.get(node.id, []):
         if child.kind == "folder":
-            versions.append({
-                "id": child.id,
-                "name": child.name,
-                "label": classify_version(child.name),
-                "size_bytes": child.total_size,
-                "file_count": child.total_files,
-                "folder_count": child.total_folders,
-                "full_path": child.path,
-                "files": walk_files(child.id),
-            })
+            versions.append(
+                {
+                    "id": child.id,
+                    "name": child.name,
+                    "label": classify_version(child.name),
+                    "size_bytes": child.total_size,
+                    "file_count": child.total_files,
+                    "folder_count": child.total_folders,
+                    "full_path": child.path,
+                    "files": walk_files(child.id),
+                }
+            )
         else:
-            remaining.append({"name": child.name, "size": child.size,
-                              "ext": child.ext, "path": child.name,
-                              "full_path": child.path})
+            remaining.append(
+                {
+                    "name": child.name,
+                    "size": child.size,
+                    "ext": child.ext,
+                    "path": child.name,
+                    "full_path": child.path,
+                }
+            )
 
     structure = {
         "versions": versions,

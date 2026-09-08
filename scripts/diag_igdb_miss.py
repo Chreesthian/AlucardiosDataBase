@@ -13,6 +13,7 @@ Uso (dentro del contenedor backend, con credenciales IGDB):
     python /tmp/diag_igdb_miss.py
 Salida: /data/miss_diagnostico.json  (en el volumen) + resumen por stdout.
 """
+
 import json
 
 from sqlalchemy import select
@@ -59,8 +60,13 @@ def main() -> None:
         misses = [t for t in filas if (_parse(t.igdb_json) or {}).get("miss")]
     print("diagnosticando", len(misses), "títulos miss")
 
-    stats = {"api_error": 0, "sin_resultados": 0, "recuperable": 0,
-             "cerca_sin_puerta": 0, "total": len(misses)}
+    stats = {
+        "api_error": 0,
+        "sin_resultados": 0,
+        "recuperable": 0,
+        "cerca_sin_puerta": 0,
+        "total": len(misses),
+    }
     salida = []
     with IgdbConnector() as conn:
         for idx, t in enumerate(misses, 1):
@@ -88,8 +94,7 @@ def main() -> None:
                     candidatos[slug] = {
                         "name": x.get("name"),
                         "plataformas": [
-                            p.get("name") for p in (x.get("platforms") or [])
-                            if p.get("name")
+                            p.get("name") for p in (x.get("platforms") or []) if p.get("name")
                         ],
                         "inter": inter,
                         "ratio": round(ratio, 2),
@@ -104,9 +109,7 @@ def main() -> None:
                 categoria = "SIN_RESULTADOS"
                 ordenados = []
             else:
-                ordenados = sorted(
-                    candidatos.values(), key=lambda c: (-c["inter"], -c["ratio"])
-                )
+                ordenados = sorted(candidatos.values(), key=lambda c: (-c["inter"], -c["ratio"]))
                 if any(_es_confiable(limpio, c["name"]) for c in ordenados):
                     stats["recuperable"] += 1
                     categoria = "RECUPERABLE"
@@ -114,13 +117,15 @@ def main() -> None:
                     stats["cerca_sin_puerta"] += 1
                     categoria = "CERCA_SIN_PUERTA"
 
-            salida.append({
-                "title": nombre,
-                "limpio": limpio,
-                "categoria": categoria,
-                "api_error": api_err,
-                "candidatos": ordenados[:4] if not api_err else [],
-            })
+            salida.append(
+                {
+                    "title": nombre,
+                    "limpio": limpio,
+                    "categoria": categoria,
+                    "api_error": api_err,
+                    "candidatos": ordenados[:4] if not api_err else [],
+                }
+            )
             if idx % 20 == 0:
                 print("progreso", idx, stats, flush=True)
 

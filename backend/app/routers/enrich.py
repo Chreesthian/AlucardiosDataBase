@@ -30,19 +30,23 @@ def _parse(raw: str | None) -> dict | None:
 def status(session: Session = Depends(get_session)) -> dict:
     snap = current_snapshot(session)
     if snap is None:
-        return {"snapshot": None, "total": 0, "covers": 0, "fichas": 0,
-                "pendientes": 0, "sin_match": 0}
+        return {
+            "snapshot": None,
+            "total": 0,
+            "covers": 0,
+            "fichas": 0,
+            "pendientes": 0,
+            "sin_match": 0,
+        }
     rows = session.execute(
-        select(Title.igdb_cover, Title.igdb_json).where(
-            Title.snapshot_id == snap.id
-        )
+        select(Title.igdb_cover, Title.igdb_json).where(Title.snapshot_id == snap.id)
     ).all()
     total = len(rows)
     covers = sum(1 for c, _ in rows if c)
     fichas = 0
     pendientes = 0
     sin_match = 0
-    for cover, raw in rows:
+    for _, raw in rows:
         payload = _parse(raw)
         if payload is None:
             pendientes += 1

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Vuelca el árbol completo de una cuenta MEGA a un archivo de texto."""
-import os
-import sys
+
 import datetime
+import os
 
 from mega import Mega
 
@@ -19,8 +19,8 @@ def main():
 
     files = m.get_files()
     nodes = {}
-    for handle, meta in files.items():
-        meta = dict(meta)
+    for handle, datos in files.items():
+        meta = dict(datos)
         meta["h"] = handle
         nodes[handle] = meta
 
@@ -92,14 +92,16 @@ def main():
                 lines.append(f"[{t}] {display}/")
             else:
                 branch = "`-- " if is_last else "|-- "
-                lines.append(f"{prefix}{branch}[{TYPE_NAME.get(t, t)}] {display}"
-                             + ("/" if t in (1, 2, 3, 4) else ""))
+                lines.append(
+                    f"{prefix}{branch}[{TYPE_NAME.get(t, t)}] {display}"
+                    + ("/" if t in (1, 2, 3, 4) else "")
+                )
             kid_list = sort_children(children.get(h, []))
             if t in (1, 2, 3, 4):
                 if t == 1:
                     counts["folders"] += 1 if depth else 0
                 for i, k in enumerate(reversed(kid_list)):
-                    is_last_child = (i == 0)
+                    is_last_child = i == 0
                     new_prefix = prefix + ("    " if is_last else "|   ")
                     stack.append((k, depth + 1, is_last_child, new_prefix))
             elif t == 0:
@@ -109,7 +111,9 @@ def main():
     header.append("VOLCADO DE CONTENIDO DE CUENTA MEGA")
     header.append("=" * 72)
     header.append(f"Cuenta            : {EMAIL}")
-    header.append(f"Fecha de volcado  : {datetime.datetime.now().isoformat(timespec='seconds')}")
+    header.append(
+        f"Fecha de volcado  : {datetime.datetime.now(datetime.UTC).isoformat(timespec='seconds')}"
+    )
     header.append(f"Nodos totales     : {len(nodes)}")
     header.append(f"Archivos          : {counts['files']}")
     header.append(f"Carpetas          : {counts['folders']}")

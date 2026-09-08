@@ -29,7 +29,8 @@ from .config import settings
 from .db import build_engine, create_schema
 from .models import Node, Snapshot, Title
 from .normalize import normalize, slugify
-from .parser import Node as PNode, ParsedDump, parse_file
+from .parser import Node as PNode
+from .parser import ParsedDump, parse_file
 
 _BUCKET_RE = re.compile(r"^-- (?P<letter>.+)$")
 _BASE_RE = re.compile(r"^(B-ASE|BASE)\b", re.IGNORECASE)
@@ -84,8 +85,9 @@ def _subtree_exts(node: PNode, acc: Counter) -> None:
         _subtree_exts(child, acc)
 
 
-def ingest(engine, dump: ParsedDump, *, source_kind: str = "dump",
-           source_path: str | None = None) -> Snapshot:
+def ingest(
+    engine, dump: ParsedDump, *, source_kind: str = "dump", source_path: str | None = None
+) -> Snapshot:
     """Persiste un ParsedDump como Snapshot nuevo. Devuelve el Snapshot."""
     snapshot = Snapshot(
         account=dump.account,
@@ -104,8 +106,9 @@ def ingest(engine, dump: ParsedDump, *, source_kind: str = "dump",
     title_descs: list[tuple[PNode, Node, str]] = []
     used_slugs: set[str] = set()
 
-    def walk(pnode: PNode, parent_pnode: PNode | None,
-             parent_role: str | None, letter: str, path: str) -> None:
+    def walk(
+        pnode: PNode, parent_pnode: PNode | None, parent_role: str | None, letter: str, path: str
+    ) -> None:
         role = role_of(parent_role, pnode)
         row = _insert_node(session, snapshot, pnode, role, path, next(order))
         created.append((pnode, row))
@@ -144,8 +147,9 @@ def ingest(engine, dump: ParsedDump, *, source_kind: str = "dump",
     return snapshot
 
 
-def _insert_node(session: Session, snapshot: Snapshot, node: PNode, role: str,
-                 path: str, order: int) -> Node:
+def _insert_node(
+    session: Session, snapshot: Snapshot, node: PNode, role: str, path: str, order: int
+) -> Node:
     row = Node(
         snapshot_id=snapshot.id,
         path=path,
@@ -175,8 +179,14 @@ def _unique_slug(name: str, used: set[str]) -> str:
     return slug
 
 
-def _add_title(session: Session, snapshot: Snapshot, node_row: Node,
-               node: PNode, letter: str, used_slugs: set[str]) -> None:
+def _add_title(
+    session: Session,
+    snapshot: Snapshot,
+    node_row: Node,
+    node: PNode,
+    letter: str,
+    used_slugs: set[str],
+) -> None:
     version_counts: Counter = Counter()
     for child in node.children:
         if child.is_folder:
@@ -185,22 +195,24 @@ def _add_title(session: Session, snapshot: Snapshot, node_row: Node,
     exts: Counter = Counter()
     _subtree_exts(node, exts)
 
-    session.add(Title(
-        snapshot_id=snapshot.id,
-        node_id=node_row.id,
-        slug=_unique_slug(node.name, used_slugs),
-        name=node.name,
-        name_norm=normalize(node.name),
-        letter=letter,
-        size_bytes=node.total_size,
-        file_count=node.total_files,
-        folder_count=node.total_folders,
-        base_count=version_counts["base"],
-        update_count=version_counts["update"],
-        dlc_count=version_counts["dlc"],
-        other_count=version_counts["other"],
-        ext_json=json.dumps(dict(exts), ensure_ascii=False),
-    ))
+    session.add(
+        Title(
+            snapshot_id=snapshot.id,
+            node_id=node_row.id,
+            slug=_unique_slug(node.name, used_slugs),
+            name=node.name,
+            name_norm=normalize(node.name),
+            letter=letter,
+            size_bytes=node.total_size,
+            file_count=node.total_files,
+            folder_count=node.total_folders,
+            base_count=version_counts["base"],
+            update_count=version_counts["update"],
+            dlc_count=version_counts["dlc"],
+            other_count=version_counts["other"],
+            ext_json=json.dumps(dict(exts), ensure_ascii=False),
+        )
+    )
 
 
 def ingest_file(engine, path: Path, *, source_kind: str = "dump") -> Snapshot:
@@ -221,12 +233,16 @@ def _make_engine(db_arg: str | None = None):
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Ingesta del volcado MEGAcmd a SQLite")
-    ap.add_argument("--dump", default=str(settings.resolved_dump),
-                    help="Ruta al .txt (dump mega-ls -R -l)")
+    ap.add_argument(
+        "--dump", default=str(settings.resolved_dump), help="Ruta al .txt (dump mega-ls -R -l)"
+    )
     ap.add_argument("--db", default=None, help="Ruta SQLite (por defecto data/alucard.db)")
     ap.add_argument("--source", default="dump", choices=["dump", "megacmd"])
-    ap.add_argument("--if-empty", action="store_true",
-                    help="Solo ingiere si la BD no tiene snapshots (arranque idempotente)")
+    ap.add_argument(
+        "--if-empty",
+        action="store_true",
+        help="Solo ingiere si la BD no tiene snapshots (arranque idempotente)",
+    )
     args = ap.parse_args()
 
     path = Path(args.dump).expanduser().resolve()

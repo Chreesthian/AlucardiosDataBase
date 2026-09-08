@@ -1,4 +1,5 @@
 """Tests de escritura atómica (anti-JSON corrupto si el proceso cae a mitad)."""
+
 from __future__ import annotations
 
 import json

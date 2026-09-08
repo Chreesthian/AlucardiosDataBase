@@ -14,7 +14,6 @@ from datetime import UTC, datetime
 
 from sqlalchemy import (
     BigInteger,
-    Boolean,
     DateTime,
     ForeignKey,
     Index,
@@ -63,7 +62,9 @@ class Node(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    snapshot_id: Mapped[int] = mapped_column(ForeignKey("snapshots.id", ondelete="CASCADE"), index=True)
+    snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("snapshots.id", ondelete="CASCADE"), index=True
+    )
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("nodes.id", ondelete="CASCADE"))
     path: Mapped[str] = mapped_column(Text)  # relativa al sector, p. ej. `-- A/Game/`
     name: Mapped[str] = mapped_column(Text)

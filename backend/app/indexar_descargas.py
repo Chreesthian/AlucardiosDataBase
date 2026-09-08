@@ -56,21 +56,31 @@ def registrar_pendientes(session: Session, snap_id: int, nivel: str) -> int:
     for n in session.execute(st.order_by(Node.node_order)).scalars():
         if n.path in existentes:
             continue
-        session.add(DownloadLink(
-            snapshot_id=snap_id, node_id=n.id, path=n.path,
-            nivel="archivo" if n.kind == "file" else "carpeta",
-            metodo="mega_export", estado="pendiente",
-        ))
+        session.add(
+            DownloadLink(
+                snapshot_id=snap_id,
+                node_id=n.id,
+                path=n.path,
+                nivel="archivo" if n.kind == "file" else "carpeta",
+                metodo="mega_export",
+                estado="pendiente",
+            )
+        )
         nuevos += 1
     session.commit()
     return nuevos
 
 
 def _exportar_json(session: Session, snap_id: int, out: Path) -> None:
-    filas = session.execute(
-        select(DownloadLink).where(DownloadLink.snapshot_id == snap_id)
-        .order_by(DownloadLink.path)
-    ).scalars().all()
+    filas = (
+        session.execute(
+            select(DownloadLink)
+            .where(DownloadLink.snapshot_id == snap_id)
+            .order_by(DownloadLink.path)
+        )
+        .scalars()
+        .all()
+    )
     datos = {
         "meta": {
             "snapshot_id": snap_id,
@@ -80,8 +90,13 @@ def _exportar_json(session: Session, snap_id: int, out: Path) -> None:
             "error": sum(1 for f in filas if f.estado == "error"),
         },
         "descargas": [
-            {"path": f.path, "nivel": f.nivel, "estado": f.estado,
-             "link": f.link, "metodo": f.metodo}
+            {
+                "path": f.path,
+                "nivel": f.nivel,
+                "estado": f.estado,
+                "link": f.link,
+                "metodo": f.metodo,
+            }
             for f in filas
         ],
     }
@@ -90,26 +105,35 @@ def _exportar_json(session: Session, snap_id: int, out: Path) -> None:
 
 
 def contar(session: Session, snap_id: int) -> dict:
-    filas = session.execute(
-        select(DownloadLink).where(DownloadLink.snapshot_id == snap_id)
-    ).scalars().all()
+    filas = (
+        session.execute(select(DownloadLink).where(DownloadLink.snapshot_id == snap_id))
+        .scalars()
+        .all()
+    )
     return dict(Counter(f.estado for f in filas))
 
 
-def generar_enlaces(engine, *, nivel: str = "archivo",
-                    limite: int | None = None, out: Path | None = None) -> dict:
+def generar_enlaces(
+    engine, *, nivel: str = "archivo", limite: int | None = None, out: Path | None = None
+) -> dict:
     """Genera los enlaces pendientes/error con mega-export (reanudable)."""
     stats = {"ok": 0, "error": 0, "pendiente": 0, "total": 0}
     with Session(engine) as session:
         snap = current_snapshot(session)
         if snap is None:
             return stats
-        rows = session.execute(
-            select(DownloadLink)
-            .where(DownloadLink.snapshot_id == snap.id,
-                   DownloadLink.estado.in_(("pendiente", "error")))
-            .order_by(DownloadLink.id)
-        ).scalars().all()
+        rows = (
+            session.execute(
+                select(DownloadLink)
+                .where(
+                    DownloadLink.snapshot_id == snap.id,
+                    DownloadLink.estado.in_(("pendiente", "error")),
+                )
+                .order_by(DownloadLink.id)
+            )
+            .scalars()
+            .all()
+        )
         if nivel != "todos":
             rows = [r for r in rows if r.nivel == nivel]
         stats["total"] = len(rows)
@@ -148,8 +172,7 @@ def generar_enlaces(engine, *, nivel: str = "archivo",
             procesadas += 1
             if procesadas % 25 == 0:
                 session.commit()
-                log.info("enlaces %d/%d (ok=%d)", procesadas, stats["total"],
-                         stats["ok"])
+                log.info("enlaces %d/%d (ok=%d)", procesadas, stats["total"], stats["ok"])
         session.commit()
         if out:
             _exportar_json(session, snap.id, out)
@@ -161,14 +184,20 @@ def main() -> None:
     ap.add_argument("--db", default=None)
     ap.add_argument("--nivel", choices=["archivo", "carpeta", "todos"], default="archivo")
     ap.add_argument("--limite", type=int, default=None)
-    ap.add_argument("--solo-pendientes", action="store_true",
-                    help="Registra pendientes sin generar enlaces (sin red)")
+    ap.add_argument(
+        "--solo-pendientes",
+        action="store_true",
+        help="Registra pendientes sin generar enlaces (sin red)",
+    )
     ap.add_argument("--out", default=None, help="JSON de salida (data/descargas.json)")
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO)
 
-    url = (f"sqlite:///{Path(args.db).expanduser().resolve()}" if args.db
-           else settings.resolved_database_url)
+    url = (
+        f"sqlite:///{Path(args.db).expanduser().resolve()}"
+        if args.db
+        else settings.resolved_database_url
+    )
     create_schema(url)
     engine = build_engine(url)
 
@@ -179,18 +208,20 @@ def main() -> None:
         nuevos = registrar_pendientes(session, snap.id, args.nivel)
         print(f"Rutas registradas como pendiente (nuevas): {nuevos}")
         if args.solo_pendientes or not megacmd.probe().available:
-            print("Estado del índice de descargas:",
-                  contar(session, snap.id))
+            print("Estado del índice de descargas:", contar(session, snap.id))
             if args.out:
                 _exportar_json(session, snap.id, Path(args.out))
                 print(f"JSON → {args.out}")
             if not args.solo_pendientes:
-                print("mega-export no disponible: vuelve a ejecutar cuando "
-                      "MEGAcmd esté activo para generar los enlaces.")
+                print(
+                    "mega-export no disponible: vuelve a ejecutar cuando "
+                    "MEGAcmd esté activo para generar los enlaces."
+                )
             return
 
-    stats = generar_enlaces(engine, nivel=args.nivel, limite=args.limite,
-                            out=Path(args.out) if args.out else None)
+    stats = generar_enlaces(
+        engine, nivel=args.nivel, limite=args.limite, out=Path(args.out) if args.out else None
+    )
     print("Enlaces generados:", stats)
 
 

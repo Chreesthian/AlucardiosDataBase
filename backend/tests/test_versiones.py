@@ -12,7 +12,8 @@ def test_parse_version_folder():
 
 
 def test_title_id_de_nombre():
-    assert title_id_de_nombre(
-        "Arcade Archives CUE BRICK [010066001E178000][v0][US](nsw2u.com).nsp"
-    ) == "010066001E178000"
+    assert (
+        title_id_de_nombre("Arcade Archives CUE BRICK [010066001E178000][v0][US](nsw2u.com).nsp")
+        == "010066001E178000"
+    )
     assert title_id_de_nombre("juego.part1.rar") is None

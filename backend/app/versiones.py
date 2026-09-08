@@ -59,12 +59,16 @@ def local_versions(engine) -> list[dict]:
         snap = current_snapshot(session)
         if snap is None:
             return []
-        titulos = list(session.execute(
-            select(Title).where(Title.snapshot_id == snap.id).order_by(Title.name_norm)
-        ).scalars())
-        nodos = list(session.execute(
-            select(Node).where(Node.snapshot_id == snap.id, Node.parent_id.is_not(None))
-        ).scalars())
+        titulos = list(
+            session.execute(
+                select(Title).where(Title.snapshot_id == snap.id).order_by(Title.name_norm)
+            ).scalars()
+        )
+        nodos = list(
+            session.execute(
+                select(Node).where(Node.snapshot_id == snap.id, Node.parent_id.is_not(None))
+            ).scalars()
+        )
         hijos: dict[int, list[Node]] = {}
         for n in nodos:
             hijos.setdefault(n.parent_id or 0, []).append(n)
@@ -77,7 +81,7 @@ def local_versions(engine) -> list[dict]:
             for ch in hijos.get(t.node_id, []):
                 if ch.kind != "folder":
                     continue
-                if re.match(r"^(B-ASE|BASE)\b", ch.name, re.I):
+                if re.match(r"^(B-ASE|BASE)\b", ch.name, re.IGNORECASE):
                     base = True
                 v = parse_version(ch.name)
                 if v:
@@ -88,15 +92,18 @@ def local_versions(engine) -> list[dict]:
                         if tid:
                             nsp_ids.add(tid)
             parches.sort()
-            out.append({
-                "slug": t.slug,
-                "nombre": t.name,
-                "base": base,
-                "versiones": [vers_a_texto(v) for v in parches],
-                "version_local": (vers_a_texto(parches[-1]) if parches
-                                  else ("1.0.0" if base else None)),
-                "title_ids": sorted(nsp_ids),
-            })
+            out.append(
+                {
+                    "slug": t.slug,
+                    "nombre": t.name,
+                    "base": base,
+                    "versiones": [vers_a_texto(v) for v in parches],
+                    "version_local": (
+                        vers_a_texto(parches[-1]) if parches else ("1.0.0" if base else None)
+                    ),
+                    "title_ids": sorted(nsp_ids),
+                }
+            )
         return out
 
 
@@ -119,8 +126,9 @@ def nintendo_search(nombre: str, *, limite: int = 5) -> dict | None:
         for i in range(len(limpio)):
             for j in range(len(oficial)):
                 k = 0
-                while (i + k < len(limpio) and j + k < len(oficial)
-                       and limpio[i + k] == oficial[j + k]):
+                while (
+                    i + k < len(limpio) and j + k < len(oficial) and limpio[i + k] == oficial[j + k]
+                ):
                     k += 1
                 score = max(score, k)
         if score >= max(2, len(limpio) - 1):
@@ -182,15 +190,24 @@ def _guardar_json(path: Path | None, data: dict) -> None:
     atomic_write_text(path, json.dumps(data, ensure_ascii=False, indent=1))
 
 
-def pasada(engine, cache: dict, *, cache_path: Path | None = None,
-           oficiales_path: Path | None = None, resolver: int = 0,
-           out_path: Path | None = None, aviso_oficiales: bool = True,
-           throttle: float = 0.3) -> dict:
+def pasada(
+    engine,
+    cache: dict,
+    *,
+    cache_path: Path | None = None,
+    oficiales_path: Path | None = None,
+    resolver: int = 0,
+    out_path: Path | None = None,
+    aviso_oficiales: bool = True,
+    throttle: float = 0.3,
+) -> dict:
     """Una pasada completa de la auditoría (resumible por cache)."""
     local = local_versions(engine)
-    con_updates = sum(1 for l in local if l["versiones"])
-    print(f"Juegos: {len(local)} · con parches: {con_updates} · solo base: "
-          f"{len(local) - con_updates}")
+    con_updates = sum(1 for juego in local if juego["versiones"])
+    print(
+        f"Juegos: {len(local)} · con parches: {con_updates} · solo base: "
+        f"{len(local) - con_updates}"
+    )
 
     oficiales: dict[str, str] = {}
     if oficiales_path is not None and oficiales_path.exists():
@@ -201,23 +218,23 @@ def pasada(engine, cache: dict, *, cache_path: Path | None = None,
 
     nuevos = 0
     if resolver:
-        for l in local:
-            if l["slug"] in cache:
-                r = cache[l["slug"]]
+        for juego in local:
+            if juego["slug"] in cache:
+                r = cache[juego["slug"]]
                 if r and r.get("title_id"):
-                    l["nintendo"] = r
-                    l["title_ids"].append(r["title_id"])
+                    juego["nintendo"] = r
+                    juego["title_ids"].append(r["title_id"])
                 continue
             if nuevos >= resolver:
                 break
             try:
-                r = nintendo_search(l["nombre"])
-            except Exception:
+                r = nintendo_search(juego["nombre"])
+            except Exception:  # noqa: BLE001 — fallo de red; se reintenta en otra pasada
                 r = None
             if r and r.get("title_id"):
-                cache[l["slug"]] = r
-                l["nintendo"] = r
-                l["title_ids"].append(r["title_id"])
+                cache[juego["slug"]] = r
+                juego["nintendo"] = r
+                juego["title_ids"].append(r["title_id"])
                 nuevos += 1
                 if cache_path and nuevos % 10 == 0:
                     _guardar_json(cache_path, cache)
@@ -233,15 +250,24 @@ def pasada(engine, cache: dict, *, cache_path: Path | None = None,
         print(f"Auditoría → {out_path}")
     for it in res["items"][:6]:
         ninty = it.get("nintendo") or {}
-        print(f"  · {it['nombre'][:40].ljust(42)} local={str(it['version_local']):8s} "
-              f"oficial={it['version_oficial_nintendo']} id={ninty.get('title_id') or it['title_ids']} "
-              f"→ {it['estado']}")
+        print(
+            f"  · {it['nombre'][:40].ljust(42)} local={it['version_local']!s:8s} "
+            f"oficial={it['version_oficial_nintendo']} id={ninty.get('title_id') or it['title_ids']} "
+            f"→ {it['estado']}"
+        )
     return {"nuevos": nuevos, "resumen": res["resumen"]}
 
 
-def daemon(engine, *, cache_path: Path | None, oficiales_path: Path | None,
-           out_path: Path | None, resolver: int, interval: int,
-           throttle: float = 0.3) -> None:
+def daemon(
+    engine,
+    *,
+    cache_path: Path | None,
+    oficiales_path: Path | None,
+    out_path: Path | None,
+    resolver: int,
+    interval: int,
+    throttle: float = 0.3,
+) -> None:
     """Worker persistente de auditoría Nintendo (blindado para supervisión).
 
     - Reanudable: mantiene el checkpoint `cache` (slug → ficha Nintendo).
@@ -253,17 +279,26 @@ def daemon(engine, *, cache_path: Path | None, oficiales_path: Path | None,
     cache = _cargar_json(cache_path)
     while True:
         try:
-            stats = pasada(engine, cache, cache_path=cache_path,
-                           oficiales_path=oficiales_path, resolver=resolver,
-                           out_path=out_path, aviso_oficiales=False,
-                           throttle=throttle)
-            print(f"[versiones-daemon] pasada ok: nuevos={stats['nuevos']} "
-                  f"resumen={stats['resumen']} (siguiente en {interval}s)")
+            stats = pasada(
+                engine,
+                cache,
+                cache_path=cache_path,
+                oficiales_path=oficiales_path,
+                resolver=resolver,
+                out_path=out_path,
+                aviso_oficiales=False,
+                throttle=throttle,
+            )
+            print(
+                f"[versiones-daemon] pasada ok: nuevos={stats['nuevos']} "
+                f"resumen={stats['resumen']} (siguiente en {interval}s)"
+            )
         except KeyboardInterrupt:
             print("[versiones-daemon] detenido por señal.")
             return
-        except Exception:
+        except Exception:  # noqa: BLE001 — el worker reintenta la pasada
             import traceback
+
             traceback.print_exc()
             print(f"[versiones-daemon] error en pasada; reintento en {interval}s")
         time.sleep(interval)
@@ -273,16 +308,21 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Auditoría de versiones local vs Nintendo")
     ap.add_argument("--db", default=None)
     ap.add_argument("--out", default=None)
-    ap.add_argument("--oficiales", default=None,
-                    help="JSON {TITLE_ID(16hex): 'x.y.z'} con versiones oficiales")
-    ap.add_argument("--resolver", type=int, default=0,
-                    help="Resuelve N juegos a title-id (red a Nintendo EU)")
-    ap.add_argument("--cache", default=None,
-                    help="JSON de checkpoint slug→ficha Nintendo (reanudable)")
-    ap.add_argument("--daemon", action="store_true",
-                    help="Modo worker: pasadas en bucle (supervisado)")
-    ap.add_argument("--interval", type=int, default=1800,
-                    help="Segundos entre pasadas en --daemon (def. 1800)")
+    ap.add_argument(
+        "--oficiales", default=None, help="JSON {TITLE_ID(16hex): 'x.y.z'} con versiones oficiales"
+    )
+    ap.add_argument(
+        "--resolver", type=int, default=0, help="Resuelve N juegos a title-id (red a Nintendo EU)"
+    )
+    ap.add_argument(
+        "--cache", default=None, help="JSON de checkpoint slug→ficha Nintendo (reanudable)"
+    )
+    ap.add_argument(
+        "--daemon", action="store_true", help="Modo worker: pasadas en bucle (supervisado)"
+    )
+    ap.add_argument(
+        "--interval", type=int, default=1800, help="Segundos entre pasadas en --daemon (def. 1800)"
+    )
     args = ap.parse_args()
 
     engine = _make_engine(args.db)
@@ -291,14 +331,26 @@ def main() -> None:
     out_path = Path(args.out) if args.out else None
 
     if args.daemon:
-        daemon(engine, cache_path=cache_path, oficiales_path=oficiales_path,
-               out_path=out_path, resolver=args.resolver,
-               interval=args.interval)
+        daemon(
+            engine,
+            cache_path=cache_path,
+            oficiales_path=oficiales_path,
+            out_path=out_path,
+            resolver=args.resolver,
+            interval=args.interval,
+        )
         return
 
     cache = _cargar_json(cache_path)
-    pasada(engine, cache, cache_path=cache_path, oficiales_path=oficiales_path,
-           resolver=args.resolver, out_path=out_path, aviso_oficiales=True)
+    pasada(
+        engine,
+        cache,
+        cache_path=cache_path,
+        oficiales_path=oficiales_path,
+        resolver=args.resolver,
+        out_path=out_path,
+        aviso_oficiales=True,
+    )
 
 
 if __name__ == "__main__":

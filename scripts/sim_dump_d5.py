@@ -9,14 +9,15 @@ Uso (dentro del contenedor backend):
     PYTHONPATH=/app python /tmp/sim_dump_d5.py
 Salida: /tmp/dump_d5.txt  +  /tmp/d5_manifest.json
 """
+
 import json
 from pathlib import Path
 
 from app.parser import FILE, FOLDER, Node, parse_text
 
 SRC = Path("/dump/mega_cuenta_contenido_MEGAcmd.txt")
-OUT = Path("/tmp/dump_d5.txt")
-MANIFEST = Path("/tmp/d5_manifest.json")
+OUT = Path("/tmp/dump_d5.txt")  # noqa: S108 — salida deliberada del sandbox simulado
+MANIFEST = Path("/tmp/d5_manifest.json")  # noqa: S108
 
 NUEVO_TITULO = "Aeternia Day Five Later"
 BUCKET = "-- A"
@@ -51,8 +52,7 @@ def main() -> None:
     def ch(nd) -> bool:
         for c in nd.children:
             if c.kind == FILE and not changed:
-                changed.append({"nombre": c.name, "antes": c.size,
-                                "despues": c.size + 1_234_567})
+                changed.append({"nombre": c.name, "antes": c.size, "despues": c.size + 1_234_567})
                 c.size += 1_234_567
                 return True
             if c.kind == FOLDER and ch(c):
@@ -67,10 +67,14 @@ def main() -> None:
     titulo = Node(name=NUEVO_TITULO, kind=FOLDER, depth=2, parent=bucket)
     base = Node(name="B-ASE", kind=FOLDER, depth=3, parent=titulo)
     upd = Node(name="U-PD 1.2.0", kind=FOLDER, depth=3, parent=titulo)
-    f1 = Node(name=f"{NUEVO_TITULO.lower()} {TITLE_ID}.nsp", kind=FILE, depth=4,
-              size=6_801_234_567, parent=base)
-    f2 = Node(name=f"{TITLE_ID} v1.2.0.nsp", kind=FILE, depth=4,
-              size=312_345_678, parent=upd)
+    f1 = Node(
+        name=f"{NUEVO_TITULO.lower()} {TITLE_ID}.nsp",
+        kind=FILE,
+        depth=4,
+        size=6_801_234_567,
+        parent=base,
+    )
+    f2 = Node(name=f"{TITLE_ID} v1.2.0.nsp", kind=FILE, depth=4, size=312_345_678, parent=upd)
     titulo.children = [base, upd]
     base.children = [f1]
     upd.children = [f2]
@@ -104,14 +108,18 @@ def main() -> None:
             escribir(r)
 
     OUT.write_text("\n".join(lineas) + "\n", encoding="utf-8")
-    MANIFEST.write_text(json.dumps(manifest, ensure_ascii=False, indent=1),
-                        encoding="utf-8")
+    MANIFEST.write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
 
     # Validación: re-parsear la salida.
     v = parse_text(OUT.read_text(encoding="utf-8"))
-    hay = any(t2.name == NUEVO_TITULO
-              for b in v.sectors for r in b.roots for c in r.children
-              if c.kind == FOLDER for t2 in c.children)
+    hay = any(
+        t2.name == NUEVO_TITULO
+        for b in v.sectors
+        for r in b.roots
+        for c in r.children
+        if c.kind == FOLDER
+        for t2 in c.children
+    )
     print("OK ->", OUT)
     print("manifest:", json.dumps(manifest, ensure_ascii=False))
     print("reparse totals:", v.totals(), "| titulo presente:", hay)

@@ -69,7 +69,9 @@ def main() -> int:
         for key in copied:
             print(f"  ✓ {key} (valor oculto)")
     else:
-        print(f"No se encontraron credenciales IGDB en {source} (opcional, sin ellas la app sigue).")
+        print(
+            f"No se encontraron credenciales IGDB en {source} (opcional, sin ellas la app sigue)."
+        )
     return 0
 
 

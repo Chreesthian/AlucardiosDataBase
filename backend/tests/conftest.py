@@ -19,8 +19,7 @@ def build_app(tmp_path, text: str = SAMPLE_DUMP):
 
     from app.ingest import ingest
 
-    ingest(app.state.engine, parse_text(text), source_kind="dump",
-           source_path=":memory-sample:")
+    ingest(app.state.engine, parse_text(text), source_kind="dump", source_path=":memory-sample:")
     return app
 
 

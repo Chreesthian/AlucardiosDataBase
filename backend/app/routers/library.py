@@ -36,8 +36,7 @@ def _require_snapshot(session: Session):
 def meta(session: Session = Depends(get_session)) -> MetaOut:
     snap = svc.current_snapshot(session)
     if snap is None:
-        return MetaOut(snapshot=None, titles=0, files=0, folders=0,
-                       bytes=0, covers=0, buckets=[])
+        return MetaOut(snapshot=None, titles=0, files=0, folders=0, bytes=0, covers=0, buckets=[])
     titles = session.query(Title).filter(Title.snapshot_id == snap.id).count()
     return MetaOut(
         snapshot=SnapshotOut.model_validate(snap),
@@ -67,12 +66,19 @@ def titles(
 ) -> TitleListOut:
     snap = _require_snapshot(session)
     rows, total = svc.list_titles(
-        session, snap.id, q=q, letter=letter, sort=sort,
-        offset=offset, limit=limit,
+        session,
+        snap.id,
+        q=q,
+        letter=letter,
+        sort=sort,
+        offset=offset,
+        limit=limit,
     )
     return TitleListOut(
         items=[TitleSummary.model_validate(r) for r in rows],
-        total=total, offset=offset, limit=limit,
+        total=total,
+        offset=offset,
+        limit=limit,
     )
 
 
@@ -85,13 +91,18 @@ def title_detail(slug: str, session: Session = Depends(get_session)) -> TitleDet
 
     versions = []
     for v in (structure or {}).get("versions", []):
-        versions.append(VersionOut(
-            id=v["id"], name=v["name"], label=v["label"],
-            size_bytes=v["size_bytes"], file_count=v["file_count"],
-            folder_count=v["folder_count"],
-            full_path=v.get("full_path"),
-            files=[FileOut(**f) for f in v["files"]],
-        ))
+        versions.append(
+            VersionOut(
+                id=v["id"],
+                name=v["name"],
+                label=v["label"],
+                size_bytes=v["size_bytes"],
+                file_count=v["file_count"],
+                folder_count=v["folder_count"],
+                full_path=v.get("full_path"),
+                files=[FileOut(**f) for f in v["files"]],
+            )
+        )
     remaining = [FileOut(**f) for f in (structure or {}).get("remaining_files", [])]
     # Ficha IGDB completa almacenada (solo si el título está enriquecido).
     ficha_payload: dict | None = None

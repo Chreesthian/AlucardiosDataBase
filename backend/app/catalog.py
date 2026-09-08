@@ -18,8 +18,9 @@ from __future__ import annotations
 import json
 from collections import Counter, defaultdict
 from pathlib import Path
+from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
 from .config import settings
@@ -72,7 +73,7 @@ def familia_formato(ext: str | None) -> str:
     return _FORMATO_FAMILIA.get(ext.lower(), f"Formato {ext.upper()}")
 
 
-def etiqueta_nodo(row) -> str:
+def etiqueta_nodo(row: Node) -> str:
     """Etiqueta semántica de un nodo (carpeta o archivo)."""
     if row.kind != "folder":
         return "Archivo"
@@ -82,9 +83,11 @@ def etiqueta_nodo(row) -> str:
 
 
 def _cargar(session: Session, snap_id: int) -> tuple[list[Node], dict[int, list[Node]]]:
-    nodos = list(session.execute(
-        select(Node).where(Node.snapshot_id == snap_id).order_by(Node.node_order)
-    ).scalars())
+    nodos = list(
+        session.execute(
+            select(Node).where(Node.snapshot_id == snap_id).order_by(Node.node_order)
+        ).scalars()
+    )
     hijos: dict[int, list[Node]] = defaultdict(list)
     for n in nodos:
         if n.parent_id is not None:
@@ -92,7 +95,7 @@ def _cargar(session: Session, snap_id: int) -> tuple[list[Node], dict[int, list[
     return nodos, hijos
 
 
-def catalogar(engine) -> dict:
+def catalogar(engine: Engine) -> dict[str, Any]:
     """Resumen clasificado de TODA la biblioteca indexada."""
     with Session(engine) as session:
         snap = current_snapshot(session)
@@ -100,10 +103,10 @@ def catalogar(engine) -> dict:
             return {"error": "sin snapshot"}
         nodos, hijos = _cargar(session, snap.id)
 
-        por_formato: Counter = Counter()
-        bytes_formato: Counter = Counter()
-        familias: Counter = Counter()
-        rol_carpetas: Counter = Counter()
+        por_formato: Counter[str] = Counter()
+        bytes_formato: Counter[str] = Counter()
+        familias: Counter[str] = Counter()
+        rol_carpetas: Counter[str] = Counter()
         total_archivos = total_bytes = total_carpetas = titulos = 0
 
         for n in nodos:
@@ -121,35 +124,45 @@ def catalogar(engine) -> dict:
                     if n.role == "title":
                         titulos += 1
 
-        raices: list[dict] = []
+        raices: list[dict[str, Any]] = []
         for root in [n for n in nodos if n.parent_id is None]:
-            buckets = []
+            buckets: list[dict[str, Any]] = []
             otros = 0
             for ch in hijos.get(root.id, []):
                 if ch.role == "bucket":
-                    bucket_titulos = sum(
-                        1 for x in hijos.get(ch.id, []) if x.role == "title"
+                    bucket_titulos = sum(1 for x in hijos.get(ch.id, []) if x.role == "title")
+                    buckets.append(
+                        {
+                            "nombre": ch.name,
+                            "letra": bucket_letter(ch.name),
+                            "titulos": bucket_titulos,
+                            "carpetas": ch.total_folders,
+                            "archivos": ch.total_files,
+                            "bytes": ch.total_size,
+                        }
                     )
-                    buckets.append({
-                        "nombre": ch.name, "letra": bucket_letter(ch.name),
-                        "titulos": bucket_titulos, "carpetas": ch.total_folders,
-                        "archivos": ch.total_files, "bytes": ch.total_size,
-                    })
                 else:
                     otros += 1
             buckets.sort(key=lambda b: (b["letra"] == "#", b["letra"]))
-            raices.append({
-                "sector": root.name, "carpetas": root.total_folders,
-                "archivos": root.total_files, "bytes": root.total_size,
-                "buckets": buckets, "otros_nodos": otros,
-            })
+            raices.append(
+                {
+                    "sector": root.name,
+                    "carpetas": root.total_folders,
+                    "archivos": root.total_files,
+                    "bytes": root.total_size,
+                    "buckets": buckets,
+                    "otros_nodos": otros,
+                }
+            )
 
         return {
             "generado": snap.ingested_at.isoformat(),
             "snapshot": {"id": snap.id, "cuenta": snap.account},
             "resumen": {
-                "archivos": total_archivos, "carpetas": total_carpetas,
-                "bytes": total_bytes, "titulos_juegos": titulos,
+                "archivos": total_archivos,
+                "carpetas": total_carpetas,
+                "bytes": total_bytes,
+                "titulos_juegos": titulos,
                 "versiones": rol_carpetas.get("version", 0),
                 "carpetas_de_letra": rol_carpetas.get("bucket", 0),
                 "por_formato": {
@@ -162,39 +175,54 @@ def catalogar(engine) -> dict:
         }
 
 
-def info_carpeta(engine, path: str) -> dict | None:
+def info_carpeta(engine: Engine, path: str) -> dict[str, Any] | None:
     """Información completa de una carpeta y de su contenido directo."""
     with Session(engine) as session:
         snap = current_snapshot(session)
         if snap is None:
             return None
-        carpeta = session.execute(
-            select(Node).where(Node.snapshot_id == snap.id, Node.path == path)
-        ).scalars().first()
+        carpeta = (
+            session.execute(select(Node).where(Node.snapshot_id == snap.id, Node.path == path))
+            .scalars()
+            .first()
+        )
         if carpeta is None or carpeta.kind != "folder":
             return None
-        hijos = session.execute(
-            select(Node).where(Node.snapshot_id == snap.id, Node.parent_id == carpeta.id)
-            .order_by(Node.node_order)
-        ).scalars().all()
-        hijos_info = [{
-            "nombre": ch.name, "path": ch.path,
-            "tipo": "carpeta" if ch.kind == "folder" else "archivo",
-            "etiqueta": etiqueta_nodo(ch), "ext": ch.ext,
-            "tamano": ch.size,
-            "sub_archivos": ch.total_files, "sub_carpetas": ch.total_folders,
-            "sub_bytes": ch.total_size,
-        } for ch in hijos]
+        hijos = (
+            session.execute(
+                select(Node)
+                .where(Node.snapshot_id == snap.id, Node.parent_id == carpeta.id)
+                .order_by(Node.node_order)
+            )
+            .scalars()
+            .all()
+        )
+        hijos_info: list[dict[str, Any]] = [
+            {
+                "nombre": ch.name,
+                "path": ch.path,
+                "tipo": "carpeta" if ch.kind == "folder" else "archivo",
+                "etiqueta": etiqueta_nodo(ch),
+                "ext": ch.ext,
+                "tamano": ch.size,
+                "sub_archivos": ch.total_files,
+                "sub_carpetas": ch.total_folders,
+                "sub_bytes": ch.total_size,
+            }
+            for ch in hijos
+        ]
         return {
-            "path": carpeta.path, "nombre": carpeta.name,
+            "path": carpeta.path,
+            "nombre": carpeta.name,
             "etiqueta": etiqueta_nodo(carpeta),
             "archivos_directos": carpeta.total_files,
-            "carpetas_totales": carpeta.total_folders, "bytes": carpeta.total_size,
+            "carpetas_totales": carpeta.total_folders,
+            "bytes": carpeta.total_size,
             "contenido": hijos_info,
         }
 
 
-def _make_engine(db_arg: str | None = None):
+def _make_engine(db_arg: str | None = None) -> Engine:
     if db_arg:
         p = Path(db_arg).expanduser().resolve()
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -205,19 +233,21 @@ def _make_engine(db_arg: str | None = None):
     return build_engine(url)
 
 
-def _resumir_texto(cat: dict) -> str:
+def _resumir_texto(cat: dict[str, Any]) -> str:
     r = cat["resumen"]
     lineas = [
         f"SNAPSHOT #{cat['snapshot']['id']} · {cat['snapshot']['cuenta']}",
-        f"  Archivos: {r['archivos']:,} · Carpetas: {r['carpetas']:,} · "
-        f"Bytes: {r['bytes']:,}",
-        f"  Juegos (títulos): {r['titulos_juegos']:,} · Versiones: "
-        f"{r['versiones']:,} · Carpetas de letra: {r['carpetas_de_letra']}",
+        (
+            f"  Archivos: {r['archivos']:,} · Carpetas: {r['carpetas']:,} · "
+            f"Bytes: {r['bytes']:,}"
+        ),
+        (
+            f"  Juegos (títulos): {r['titulos_juegos']:,} · Versiones: "
+            f"{r['versiones']:,} · Carpetas de letra: {r['carpetas_de_letra']}"
+        ),
     ]
     if r["por_formato"]:
-        fmt = ", ".join(
-            f"{ext}:{d['archivos']}" for ext, d in list(r["por_formato"].items())[:6]
-        )
+        fmt = ", ".join(f"{ext}:{d['archivos']}" for ext, d in list(r["por_formato"].items())[:6])
         lineas.append(f"  Formatos (ext:nº): {fmt}")
     return "\n".join(lineas)
 
@@ -227,27 +257,30 @@ def main() -> None:
 
     ap = argparse.ArgumentParser(description="Catálogo interno clasificado del contenido MEGA")
     ap.add_argument("--db", default=None)
-    ap.add_argument("--out", default=None,
-                    help="Ruta JSON de salida (p. ej. data/catalogo.json)")
-    ap.add_argument("--carpeta", default=None,
-                    help="Imprime la información completa de una carpeta (path)")
+    ap.add_argument("--out", default=None, help="Ruta JSON de salida (p. ej. data/catalogo.json)")
+    ap.add_argument(
+        "--carpeta", default=None, help="Imprime la información completa de una carpeta (path)"
+    )
     args = ap.parse_args()
 
     engine = _make_engine(args.db)
     if args.carpeta:
         info = info_carpeta(engine, args.carpeta)
-        print(json.dumps(info or {"error": "carpeta no encontrada"},
-                         ensure_ascii=False, indent=2))
+        print(json.dumps(info or {"error": "carpeta no encontrada"}, ensure_ascii=False, indent=2))
         return
 
     cat = catalogar(engine)
     print(_resumir_texto(cat))
     for raiz in cat["raices"]:
-        print(f"\n· {raiz['sector']} — {raiz['archivos']:,} archivos, "
-              f"{raiz['carpetas']:,} carpetas, {raiz['bytes']:,} bytes")
+        print(
+            f"\n· {raiz['sector']} — {raiz['archivos']:,} archivos, "
+            f"{raiz['carpetas']:,} carpetas, {raiz['bytes']:,} bytes"
+        )
         for b in raiz["buckets"]:
-            print(f"    {b['letra']:>2} · {b['titulos']:>5} juegos · "
-                  f"{b['archivos']:>6} archivos · {b['bytes']:>15,} bytes")
+            print(
+                f"    {b['letra']:>2} · {b['titulos']:>5} juegos · "
+                f"{b['archivos']:>6} archivos · {b['bytes']:>15,} bytes"
+            )
 
     if args.out:
         out = Path(args.out)

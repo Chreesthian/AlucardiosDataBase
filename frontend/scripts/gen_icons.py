@@ -4,11 +4,12 @@
 
     python3 frontend/scripts/gen_icons.py
 """
+
 from pathlib import Path
 
 from PIL import Image
 
-ROOT = Path(__file__).resolve().parents[1]          # frontend/
+ROOT = Path(__file__).resolve().parents[1]  # frontend/
 BRAND = ROOT / "public" / "brand" / "emblem.png"
 OUT = ROOT / "public" / "icons"
 
@@ -18,14 +19,12 @@ def _redimensionar(tam: int, path: Path, fondo: str | None = None) -> None:
     if fondo is not None:
         lienzo = Image.new("RGBA", (tam, tam), fondo)
         fuente = fuente.resize((int(tam * 0.78), int(tam * 0.78)), Image.LANCZOS)
-        lienzo.alpha_composite(fuente, ((tam - fuente.width) // 2,
-                                        (tam - fuente.height) // 2))
+        lienzo.alpha_composite(fuente, ((tam - fuente.width) // 2, (tam - fuente.height) // 2))
         lienzo.save(path, "PNG")
         return
     fuente.thumbnail((tam, tam), Image.LANCZOS)
     lienzo = Image.new("RGBA", (tam, tam), (0, 0, 0, 0))
-    lienzo.alpha_composite(fuente, ((tam - fuente.width) // 2,
-                                    (tam - fuente.height) // 2))
+    lienzo.alpha_composite(fuente, ((tam - fuente.width) // 2, (tam - fuente.height) // 2))
     lienzo.save(path, "PNG")
 
 

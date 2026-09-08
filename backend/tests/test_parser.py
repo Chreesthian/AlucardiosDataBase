@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.parser import FOLDER, parse_text
+from app.parser import parse_text
 
 from .sample_dump import SAMPLE_DUMP
 
@@ -49,7 +49,7 @@ def test_estructura_titulo_y_archivos():
 
     versions = [c for c in game_one.children if c.is_folder]
     assert [v.name for v in versions] == ["B-ASE", "U-PD 1.0.1", "D-LC"]
-    rar = [f for f in versions[0].children if f.name.endswith("part1.rar")][0]
+    rar = next(f for f in versions[0].children if f.name.endswith("part1.rar"))
     assert rar.size == 104857600
     assert rar.ext == "rar"
 
@@ -57,5 +57,5 @@ def test_estructura_titulo_y_archivos():
 def test_extension_nsp():
     dump = parse_text(SAMPLE_DUMP)
     zelda = dump.sectors[3].roots[0].children[1].children[0]
-    (nsp,) = [f for f in zelda.children[0].children]
+    (nsp,) = list(zelda.children[0].children)
     assert nsp.ext == "nsp"

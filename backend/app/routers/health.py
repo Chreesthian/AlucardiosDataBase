@@ -18,7 +18,7 @@ def health(session: Session = Depends(get_session)) -> dict:
     db_ok = True
     try:
         session.execute(text("SELECT 1"))
-    except Exception:  # pragma: no cover
+    except Exception:  # pragma: no cover  # noqa: BLE001
         db_ok = False
     snapshots = session.query(Snapshot).count()
     return {

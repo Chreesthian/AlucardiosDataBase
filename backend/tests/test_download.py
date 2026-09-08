@@ -14,9 +14,10 @@ RUTA = "INSHARE test@example.com:BCKP1/-- A/A Game One/B-ASE/game1.part1.rar"
 
 def test_path_a_mega():
     assert path_a_mega("CLOUD_DRIVE/S4 Object storage") == "/S4 Object storage"
-    assert path_a_mega(
-        "INSHARE cuenta.base.demo@gmail.com:BCKP1/-- A/Game/x.rar"
-    ) == "/from/cuenta.base.demo@gmail.com:BCKP1/-- A/Game/x.rar"
+    assert (
+        path_a_mega("INSHARE cuenta.base.demo@gmail.com:BCKP1/-- A/Game/x.rar")
+        == "/from/cuenta.base.demo@gmail.com:BCKP1/-- A/Game/x.rar"
+    )
     assert path_a_mega("INSHARE cuenta.base.demo@gmail.com:BCKP1") == (
         "/from/cuenta.base.demo@gmail.com:BCKP1"
     )
@@ -25,13 +26,9 @@ def test_path_a_mega():
 def test_remote_candidates_incluyen_variantes_y_cuenta_duena():
     c = remote_candidates(RUTA)
     # 1) share montado (sintaxis MEGAcmd con `:`)
-    assert c[0] == (
-        "/from/test@example.com:BCKP1/-- A/A Game One/B-ASE/game1.part1.rar"
-    )
+    assert c[0] == ("/from/test@example.com:BCKP1/-- A/A Game One/B-ASE/game1.part1.rar")
     # 2) variante con `/` en lugar de `:`
-    assert (
-        "/from/test@example.com/BCKP1/-- A/A Game One/B-ASE/game1.part1.rar"
-    ) in c
+    assert ("/from/test@example.com/BCKP1/-- A/A Game One/B-ASE/game1.part1.rar") in c
     # 3) la cuenta dueña tiene BCKP1 en la raíz de su nube
     assert "/BCKP1/-- A/A Game One/B-ASE/game1.part1.rar" in c
     assert len(c) == len(set(c))
@@ -58,7 +55,7 @@ def test_descarga_con_enlace_mega(tmp_path, monkeypatch):
 
     class _Fake:
         @staticmethod
-        def export_link(remote):  # noqa: D102
+        def export_link(remote):
             return "https://mega.nz/file/ABCDEF#clave123"
 
     monkeypatch.setattr("app.routers.download.megacmd", _Fake)

@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """Construye el volcado final de la cuenta MEGA a partir de listados MEGAcmd (-R -l)."""
-import re
+
 import datetime
+import re
 
 SECTORS = [
     # (titulo, archivo de listado, nombre raiz para mostrar)
     ("CLOUD_DRIVE", "/home/christian/root_listing.txt", "/"),
     ("INBOX", "/home/christian/inbox_listing.txt", "//in"),
     ("RUBBISH_BIN", "/home/christian/rubbish_listing.txt", "//bin"),
-    ("INSHARE cuenta.base.demo@gmail.com:BCKP1",
-     "/home/christian/bckp1_listing.txt",
-     "//from/cuenta.base.demo@gmail.com:BCKP1"),
+    (
+        "INSHARE cuenta.base.demo@gmail.com:BCKP1",
+        "/home/christian/bckp1_listing.txt",
+        "//from/cuenta.base.demo@gmail.com:BCKP1",
+    ),
 ]
 
 ENTRY_RE = re.compile(
@@ -47,7 +50,7 @@ def parse_listing(path):
                     continue
                 full = (current.rstrip("/") + "/" + name) if current not in ("", "/") else name
                 if base is not None and full.startswith(base):
-                    rel = full[len(base):].lstrip("/")
+                    rel = full[len(base) :].lstrip("/")
                 else:
                     rel = full
                 t = "folder" if m.group("flags")[0] in "dribx" else "file"
@@ -89,7 +92,7 @@ def build_lines(nodes, root_label):
     def walk(parent, prefix, is_last):
         kids = children.get(parent, [])
         for i, rel in enumerate(kids):
-            last = (i == len(kids) - 1)
+            last = i == len(kids) - 1
             t, size = nodes[rel]
             nm = name_of(rel)
             branch = "`-- " if last else "|-- "
@@ -125,7 +128,7 @@ def main():
         total["folders"] += counts["folders"]
         total["bytes"] += counts["bytes"]
 
-    now = datetime.datetime.now().isoformat(timespec="seconds")
+    now = datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds")
     hdr = [
         "VOLCADO DE CONTENIDO DE CUENTA MEGA (MEGAcmd)",
         "=" * 72,

@@ -6,13 +6,15 @@ SQLite por defecto (WAL, `check_same_thread=False`); cualquier URL de SQLAlchemy
 
 from __future__ import annotations
 
-from sqlalchemy import create_engine, event
-from sqlalchemy.orm import sessionmaker
+from typing import Any
+
+from sqlalchemy import Engine, create_engine, event
+from sqlalchemy.orm import Session, sessionmaker
 
 from .models import Base
 
 
-def build_engine(database_url: str):
+def build_engine(database_url: str) -> Engine:
     if database_url.startswith("sqlite"):
         engine = create_engine(
             database_url,
@@ -21,7 +23,7 @@ def build_engine(database_url: str):
         )
 
         @event.listens_for(engine, "connect")
-        def _sqlite_prgmas(dbapi_conn, _record):  # pragma: no cover - trivial
+        def _sqlite_prgmas(dbapi_conn: Any, _record: Any) -> None:  # pragma: no cover - trivial
             cur = dbapi_conn.cursor()
             cur.execute("PRAGMA journal_mode=WAL")
             cur.execute("PRAGMA foreign_keys=ON")
@@ -36,6 +38,6 @@ def create_schema(database_url: str) -> None:
     Base.metadata.create_all(build_engine(database_url))
 
 
-def make_session_factory(database_url: str):
+def make_session_factory(database_url: str) -> sessionmaker[Session]:
     engine = build_engine(database_url)
     return sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)

@@ -48,9 +48,7 @@ def probe() -> MegaCmdInfo:
         )
     version = None
     try:
-        out = subprocess.run(
-            [binary, "--version"], capture_output=True, text=True, timeout=10
-        )
+        out = subprocess.run([binary, "--version"], capture_output=True, text=True, timeout=10)
         version = (out.stdout or out.stderr or "").strip().splitlines()
         version = version[0] if version else None
     except (OSError, subprocess.TimeoutExpired):
@@ -74,7 +72,9 @@ def export_link(remote_path: str, timeout: int | None = None) -> str:
     def _run(args: list[str]) -> subprocess.CompletedProcess:
         try:
             return subprocess.run(
-                args, capture_output=True, text=True,
+                args,
+                capture_output=True,
+                text=True,
                 timeout=timeout or settings.mega_timeout_s,
             )
         except subprocess.TimeoutExpired as exc:

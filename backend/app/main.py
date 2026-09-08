@@ -13,7 +13,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import sessionmaker
 
 from . import __version__
-from .config import Settings, settings as default_settings
+from .config import Settings
+from .config import settings as default_settings
 from .db import build_engine, create_schema
 from .routers import catalog, download, enrich, health, library, sync
 
@@ -24,8 +25,7 @@ def create_app(settings_: Settings | None = None) -> FastAPI:
 
     create_schema(database_url)
     engine = build_engine(database_url)
-    session_factory = sessionmaker(bind=engine, autoflush=False,
-                                   expire_on_commit=False)
+    session_factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):

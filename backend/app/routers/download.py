@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -36,7 +36,7 @@ def path_a_mega(path: str) -> str:
     sector = partes[0]
     resto = partes[1] if len(partes) > 1 else ""
     if sector.startswith("INSHARE "):
-        share = sector[len("INSHARE "):].strip()
+        share = sector[len("INSHARE ") :].strip()
         base = "/from/" + share
     else:
         base = _ROOT_MEGA.get(sector, "/" + sector)
@@ -53,7 +53,7 @@ def remote_candidates(path: str) -> list[str]:
     cand = path_a_mega(path)
     out: list[str] = [cand]
     if cand.startswith("/from/"):
-        resto = cand[len("/from/"):]
+        resto = cand[len("/from/") :]
         if ":" in resto:
             alt = "/from/" + resto.replace(":", "/", 1)
             if alt != cand:
@@ -62,7 +62,7 @@ def remote_candidates(path: str) -> list[str]:
         # /from/cuenta:carpeta/… → /carpeta/…
         segs = resto.split("/")
         carpeta = segs[0].split(":", 1)[-1]
-        dueño = "/" + "/".join([carpeta] + segs[1:])
+        dueño = "/" + "/".join([carpeta, *segs[1:]])
         if dueño != cand:
             out.append(dueño)
     return out
@@ -70,18 +70,28 @@ def remote_candidates(path: str) -> list[str]:
 
 def _cachear(session: Session, snap_id: int, node: Node, link: str) -> None:
     """Guarda/actualiza el enlace del nodo exacto en el índice `downloads`."""
-    fila = session.execute(
-        select(DownloadLink).where(
-            DownloadLink.snapshot_id == snap_id, DownloadLink.path == node.path
+    fila = (
+        session.execute(
+            select(DownloadLink).where(
+                DownloadLink.snapshot_id == snap_id, DownloadLink.path == node.path
+            )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     if fila is None:
-        session.add(DownloadLink(
-            snapshot_id=snap_id, node_id=node.id, path=node.path,
-            nivel="archivo" if node.kind == "file" else "carpeta",
-            metodo="mega_export", estado="ok", link=link,
-            generado_en=datetime.now(UTC),
-        ))
+        session.add(
+            DownloadLink(
+                snapshot_id=snap_id,
+                node_id=node.id,
+                path=node.path,
+                nivel="archivo" if node.kind == "file" else "carpeta",
+                metodo="mega_export",
+                estado="ok",
+                link=link,
+                generado_en=datetime.now(UTC),
+            )
+        )
     else:
         fila.link = link
         fila.estado = "ok"
@@ -95,19 +105,25 @@ def descargar(path: str, session: Session = Depends(get_session)) -> RedirectRes
     snap = current_snapshot(session)
     if snap is None:
         raise HTTPException(404, "No hay snapshot: ejecuta primero la ingesta.")
-    node = session.execute(
-        select(Node).where(Node.snapshot_id == snap.id, Node.path == path)
-    ).scalars().first()
+    node = (
+        session.execute(select(Node).where(Node.snapshot_id == snap.id, Node.path == path))
+        .scalars()
+        .first()
+    )
     if node is None:
         raise HTTPException(404, f"Nodo no encontrado: {path}")
 
     candidatas = remote_candidates(path)
     # 1) Enlace ya indexado para ESTA ruta exacta.
-    idx = session.execute(
-        select(DownloadLink).where(
-            DownloadLink.snapshot_id == snap.id, DownloadLink.path == path
+    idx = (
+        session.execute(
+            select(DownloadLink).where(
+                DownloadLink.snapshot_id == snap.id, DownloadLink.path == path
+            )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     link = idx.link if (idx and idx.estado == "ok" and idx.link) else None
     remoto_usado = (idx.error if idx else None) or candidatas[0]
 
@@ -131,4 +147,3 @@ def descargar(path: str, session: Session = Depends(get_session)) -> RedirectRes
     resp = RedirectResponse(link, status_code=302)
     resp.headers["X-Download-Remote"] = remoto_usado
     return resp
-

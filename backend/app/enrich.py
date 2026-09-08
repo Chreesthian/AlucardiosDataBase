@@ -21,9 +21,11 @@ import argparse
 import json
 import logging
 import time
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any, cast
 
-from sqlalchemy import select
+from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
 from .config import settings
@@ -41,18 +43,22 @@ log = logging.getLogger("alucard.enrich")
 
 FICHA_V = 2
 
+ProcesadorFicha = Callable[[str, dict[str, Any] | None], dict[str, Any] | None]
 
-def _parse(raw: str | None) -> dict | None:
+
+def _parse(raw: str | None) -> dict[str, Any] | None:
     if not raw:
         return None
     try:
         data = json.loads(raw)
     except (TypeError, ValueError):
         return None
-    return data if isinstance(data, dict) else None
+    if not isinstance(data, dict):
+        return None
+    return cast("dict[str, Any]", data)
 
 
-def version(payload: dict | str | None) -> int:
+def version(payload: dict[str, Any] | str | None) -> int:
     if isinstance(payload, str):
         payload = _parse(payload)
     if not payload:
@@ -60,20 +66,18 @@ def version(payload: dict | str | None) -> int:
     return int(payload.get("ficha_v") or 0)
 
 
-def necesita_trabajo(payload: dict | None) -> bool:
+def necesita_trabajo(payload: dict[str, Any] | None) -> bool:
     """True si la fila requiere match o ficha completa (v0/v1 o miss antiguo)."""
     v = version(payload)
     if v == 0:
         return True
-    if v >= FICHA_V:
-        return False
     # v1: puede ser match básico (le falta ficha completa) o miss antiguo.
-    return True
+    return v < FICHA_V
 
 
 def listar_trabajo(session: Session, snapshot_id: int) -> list[Title]:
     """Filas a procesar: sin resolver, o resueltas en una fase anterior."""
-    rows = []
+    rows: list[Title] = []
     for t in session.execute(
         select(Title).where(Title.snapshot_id == snapshot_id).order_by(Title.id.asc())
     ).scalars():
@@ -82,21 +86,24 @@ def listar_trabajo(session: Session, snapshot_id: int) -> list[Title]:
     return rows
 
 
-def _payload_miss() -> dict:
+def _payload_miss() -> dict[str, Any]:
     return {"ficha_v": FICHA_V, "miss": True}
 
 
-def procesar_con_connector(connector: IgdbConnector):
+def procesar_con_connector(connector: IgdbConnector) -> ProcesadorFicha:
     """Devuelve `procesar(nombre, payload_previo) -> payload nuevo|None`.
 
     None indica que el título ya está al día (v2) y no se toca.
     """
 
-    def procesar(nombre: str, previo: dict | None):
+    def procesar(
+        nombre: str,
+        previo: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
         v = version(previo)
         if v >= FICHA_V:
             return None
-        slug_previo = (previo or {}).get("slug")
+        slug_previo: str | None = previo.get("slug") if previo else None
 
         if slug_previo:  # fase v1 match básico → solo falta ficha completa
             detalle = connector.ficha_detallada(str(slug_previo))
@@ -125,7 +132,7 @@ def procesar_con_connector(connector: IgdbConnector):
     return procesar
 
 
-def aplicar(titulo: Title, payload: dict) -> None:
+def aplicar(titulo: Title, payload: dict[str, Any]) -> None:
     """Vuelca el payload v2 en los campos de la fila (sin commit)."""
     titulo.igdb_json = json.dumps(payload, ensure_ascii=False)
     titulo.igdb_slug = payload.get("slug")
@@ -135,11 +142,25 @@ def aplicar(titulo: Title, payload: dict) -> None:
         titulo.igdb_cover = None
 
 
-def run(engine, *, limit: int | None = None, full: bool = False,
-        procesar=None, connector: IgdbConnector | None = None) -> dict:
+def run(
+    engine: Engine,
+    *,
+    limit: int | None = None,
+    full: bool = False,
+    procesar: ProcesadorFicha | None = None,
+    connector: IgdbConnector | None = None,
+) -> dict[str, Any]:
     """Enriquece títulos (match + ficha completa). Devuelve contadores."""
-    stats = {"ok": 0, "detalle": 0, "miss": 0, "error": 0, "total": 0,
-             "limit": limit, "cobertura": 0, "con_detalle": 0}
+    stats: dict[str, Any] = {
+        "ok": 0,
+        "detalle": 0,
+        "miss": 0,
+        "error": 0,
+        "total": 0,
+        "limit": limit,
+        "cobertura": 0,
+        "con_detalle": 0,
+    }
 
     if procesar is None:
         if connector is None:
@@ -156,9 +177,11 @@ def run(engine, *, limit: int | None = None, full: bool = False,
         if snap is None:
             stats["sin_snapshot"] = True
             return stats
-        filas = list(session.execute(
-            select(Title).where(Title.snapshot_id == snap.id).order_by(Title.id.asc())
-        ).scalars())
+        filas = list(
+            session.execute(
+                select(Title).where(Title.snapshot_id == snap.id).order_by(Title.id.asc())
+            ).scalars()
+        )
         trabajo = filas if full else listar_trabajo(session, snap.id)
         stats["total"] = len(trabajo)
 
@@ -186,15 +209,20 @@ def run(engine, *, limit: int | None = None, full: bool = False,
             procesadas += 1
             if procesadas % 25 == 0:
                 session.commit()
-                log.info("progreso %d/%d (ok=%d detalle=%d)", procesadas,
-                         stats["total"], stats["ok"], stats["detalle"])
+                log.info(
+                    "progreso %d/%d (ok=%d detalle=%d)",
+                    procesadas,
+                    stats["total"],
+                    stats["ok"],
+                    stats["detalle"],
+                )
         session.commit()
 
         # Portadas rezagadas: si la ficha v2 trae 'caratula' pero la columna
         # quedó vacía, la rellenamos (sin red) antes de las métricas.
-        total_rows = list(session.execute(
-            select(Title).where(Title.snapshot_id == snap.id)
-        ).scalars())
+        total_rows = list(
+            session.execute(select(Title).where(Title.snapshot_id == snap.id)).scalars()
+        )
         n_portadas = 0
         for t in total_rows:
             p = _parse(t.igdb_json)
@@ -207,17 +235,20 @@ def run(engine, *, limit: int | None = None, full: bool = False,
 
         # Métricas finales sobre TODA la biblioteca del snapshot.
         stats["cobertura"] = sum(1 for t in total_rows if t.igdb_cover)
-        stats["con_detalle"] = sum(
-            1 for t in total_rows if version(_parse(t.igdb_json)) >= FICHA_V
-            and not (_parse(t.igdb_json) or {}).get("miss")
-        )
+        con_detalle = 0
+        for t in total_rows:
+            p = _parse(t.igdb_json)
+            if p is not None and not p.get("miss") and version(p) >= FICHA_V:
+                con_detalle += 1
+        stats["con_detalle"] = con_detalle
     if connector is not None:
         connector.close()
     return stats
 
 
-def daemon(engine, *, sleep_seg: int = 60, limit: int | None = None,
-           full: bool = False) -> None:
+def daemon(
+    engine: Engine, *, sleep_seg: int = 60, limit: int | None = None, full: bool = False
+) -> None:
     """Worker persistente de enriquecimiento (bucle supervisado).
 
     Pensado para correr bajo `docker compose` (restart: unless-stopped). Cada
@@ -240,7 +271,7 @@ def daemon(engine, *, sleep_seg: int = 60, limit: int | None = None,
         time.sleep(sleep_seg)
 
 
-def _make_engine(db_arg: str | None = None):
+def _make_engine(db_arg: str | None = None) -> Engine:
     if db_arg:
         p = Path(db_arg).expanduser().resolve()
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -251,22 +282,25 @@ def _make_engine(db_arg: str | None = None):
     return build_engine(url)
 
 
-def limpiar_para_reprocesar(engine, fragmento: str) -> int:
+def limpiar_para_reprocesar(engine: Engine, fragmento: str) -> int:
     """Deja sin resolver los títulos cuyo nombre contiene `fragmento`
     (para re-hacer su match con la lógica mejorada). Devuelve nº de filas."""
     from .library import current_snapshot
-    from .models import Snapshot
 
     with Session(engine) as session:
         snap = current_snapshot(session)
         if snap is None:
             return 0
-        rows = session.execute(
-            select(Title).where(
-                Title.snapshot_id == snap.id,
-                Title.name.contains(fragmento),
+        rows = (
+            session.execute(
+                select(Title).where(
+                    Title.snapshot_id == snap.id,
+                    Title.name.contains(fragmento),
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         for t in rows:
             t.igdb_json = None
             t.igdb_slug = None
@@ -275,18 +309,15 @@ def limpiar_para_reprocesar(engine, fragmento: str) -> int:
         return len(rows)
 
 
-def limpiar_todo(engine) -> int:
+def limpiar_todo(engine: Engine) -> int:
     """Limpia el estado IGDB de TODOS los títulos (re-resolución global)."""
     from .library import current_snapshot
-    from .models import Snapshot
 
     with Session(engine) as session:
         snap = current_snapshot(session)
         if snap is None:
             return 0
-        rows = session.execute(
-            select(Title).where(Title.snapshot_id == snap.id)
-        ).scalars().all()
+        rows = session.execute(select(Title).where(Title.snapshot_id == snap.id)).scalars().all()
         for t in rows:
             t.igdb_json = None
             t.igdb_slug = None
@@ -295,8 +326,9 @@ def limpiar_todo(engine) -> int:
         return len(rows)
 
 
-def refrescar_extra(engine, *, limite: int | None = None,
-                    slugs: list[str] | None = None) -> dict:
+def refrescar_extra(
+    engine: Engine, *, limite: int | None = None, slugs: list[str] | None = None
+) -> dict[str, Any]:
     """Re-descarga la ficha IGDB ampliada (lanzamientos, enlaces, idiomas,
     clasificaciones…) de las fichas ya guardadas (idempotente y reanudable).
 
@@ -305,23 +337,21 @@ def refrescar_extra(engine, *, limite: int | None = None,
     Devuelve contadores; los títulos que sigan sin extra se reintentan en otra
     ejecución (no se marcan como fallidos).
     """
-    stats = {"ok": 0, "sin_detalle": 0, "error": 0, "total": 0, "repetidos": 0}
+    stats: dict[str, Any] = {"ok": 0, "sin_detalle": 0, "error": 0, "total": 0, "repetidos": 0}
     connector = IgdbConnector()
     try:
         if not connector.configurado():
-            raise IgdbNoConfigurado(
-                "IGDB no configurado: define IGDB_CLIENT_ID/IGDB_CLIENT_SECRET"
-            )
+            raise IgdbNoConfigurado("IGDB no configurado: define IGDB_CLIENT_ID/IGDB_CLIENT_SECRET")
         with Session(engine) as session:
             snap = current_snapshot(session)
             if snap is None:
                 return stats
-            filas = list(session.execute(
-                select(Title).where(
-                    Title.snapshot_id == snap.id, Title.igdb_slug.is_not(None)
-                )
-            ).scalars())
-            pendientes = []
+            filas = list(
+                session.execute(
+                    select(Title).where(Title.snapshot_id == snap.id, Title.igdb_slug.is_not(None))
+                ).scalars()
+            )
+            pendientes: list[Title] = []
             for t in filas:
                 p = _parse(t.igdb_json)
                 if not p or p.get("miss") or version(p) < FICHA_V:
@@ -348,15 +378,16 @@ def refrescar_extra(engine, *, limite: int | None = None,
                 stats["repetidos"] += 1
                 if stats["repetidos"] % 25 == 0:
                     session.commit()
-                    log.info("refresco %d/%d (ok=%d)", stats["repetidos"],
-                             stats["total"], stats["ok"])
+                    log.info(
+                        "refresco %d/%d (ok=%d)", stats["repetidos"], stats["total"], stats["ok"]
+                    )
             session.commit()
     finally:
         connector.close()
     return stats
 
 
-def limpiar_misses(engine) -> int:
+def limpiar_misses(engine: Engine) -> int:
     """Deja sin resolver SOLO los títulos marcados `miss` (reintento matcher v3).
 
     Los títulos ya resueltos (ficha v2) NO se tocan: la recuperación es
@@ -369,9 +400,7 @@ def limpiar_misses(engine) -> int:
         if snap is None:
             return 0
         n = 0
-        for t in session.execute(
-            select(Title).where(Title.snapshot_id == snap.id)
-        ).scalars():
+        for t in session.execute(select(Title).where(Title.snapshot_id == snap.id)).scalars():
             payload = _parse(t.igdb_json)
             if payload and payload.get("miss"):
                 t.igdb_json = None
@@ -383,26 +412,39 @@ def limpiar_misses(engine) -> int:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(
-        description="Enriquece títulos con la ficha IGDB completa"
-    )
+    ap = argparse.ArgumentParser(description="Enriquece títulos con la ficha IGDB completa")
     ap.add_argument("--db", default=None, help="Ruta SQLite")
     ap.add_argument("--limit", type=int, default=None, help="Máx. títulos")
     ap.add_argument("--full", action="store_true", help="Re-procesar todo (ignora marcas)")
     ap.add_argument("-v", "--verbose", action="store_true")
-    ap.add_argument("--reprocesar", metavar="TEXTO", default=None,
-                    help="Limpia y re-resuelve títulos cuyo nombre contiene TEXTO")
-    ap.add_argument("--miss", action="store_true",
-                    help="Reintenta SOLO los títulos marcados 'miss' (matcher v3)")
-    ap.add_argument("--refrescar", type=int, default=None, metavar="N",
-                    help="Re-descarga fichas IGDB ampliadas de hasta N títulos "
-                         "(sin extra: lanzamientos/enlaces/idiomas…)")
-    ap.add_argument("--slugs", default=None,
-                    help="Slugs concretos a refrescar (separados por coma)")
-    ap.add_argument("--daemon", action="store_true",
-                    help="Modo worker: ejecuta pasadas en bucle (supervisado)")
-    ap.add_argument("--sleep", type=int, default=60,
-                    help="Segundos entre pasadas en modo --daemon (def. 60)")
+    ap.add_argument(
+        "--reprocesar",
+        metavar="TEXTO",
+        default=None,
+        help="Limpia y re-resuelve títulos cuyo nombre contiene TEXTO",
+    )
+    ap.add_argument(
+        "--miss",
+        action="store_true",
+        help="Reintenta SOLO los títulos marcados 'miss' (matcher v3)",
+    )
+    ap.add_argument(
+        "--refrescar",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Re-descarga fichas IGDB ampliadas de hasta N títulos "
+        "(sin extra: lanzamientos/enlaces/idiomas…)",
+    )
+    ap.add_argument(
+        "--slugs", default=None, help="Slugs concretos a refrescar (separados por coma)"
+    )
+    ap.add_argument(
+        "--daemon", action="store_true", help="Modo worker: ejecuta pasadas en bucle (supervisado)"
+    )
+    ap.add_argument(
+        "--sleep", type=int, default=60, help="Segundos entre pasadas en modo --daemon (def. 60)"
+    )
     args = ap.parse_args()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
 
@@ -419,12 +461,13 @@ def main() -> None:
         print(f"Reintento v3: {n} título(s) 'miss' limpios para re-resolver.")
 
     if args.refrescar is not None or args.slugs:
-        slugs = [s.strip() for s in args.slugs.split(",") if s.strip()] \
-            if args.slugs else None
+        slugs = [s.strip() for s in args.slugs.split(",") if s.strip()] if args.slugs else None
         stats = refrescar_extra(engine, limite=args.refrescar, slugs=slugs)
-        print(f"Refresco fichas ampliadas: ok={stats['ok']} · "
-              f"sin_detalle={stats['sin_detalle']} · errores={stats['error']} · "
-              f"total={stats['total']}")
+        print(
+            f"Refresco fichas ampliadas: ok={stats['ok']} · "
+            f"sin_detalle={stats['sin_detalle']} · errores={stats['error']} · "
+            f"total={stats['total']}"
+        )
         if not args.daemon:
             return
 

@@ -42,8 +42,8 @@ class Node:
     depth: int
     size: int = 0
     ext: str | None = None
-    children: list["Node"] = field(default_factory=list)
-    parent: "Node | None" = None
+    children: list[Node] = field(default_factory=list)
+    parent: Node | None = None
     total_size: int = 0
     total_files: int = 0
     total_folders: int = 0
@@ -110,9 +110,9 @@ def _parse_entry(line: str):
     if i_f < 0 and i_l < 0:
         return None
     if i_f >= 0 and (i_l < 0 or i_f < i_l):
-        kind, idx, rest = FOLDER, i_f, line[i_f + len("[FOLDER]"):]
+        kind, idx, rest = FOLDER, i_f, line[i_f + len("[FOLDER]") :]
     else:
-        kind, idx, rest = FILE, i_l, line[i_l + len("[FILE]"):]
+        kind, idx, rest = FILE, i_l, line[i_l + len("[FILE]") :]
 
     depth = idx // 4
     rest = rest.strip()

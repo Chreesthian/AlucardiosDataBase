@@ -41,22 +41,25 @@ def status(session: Session = Depends(get_session)) -> SyncStatusOut:
         megacmd_available=probe.available,
         megacmd_binary=probe.binary,
         megacmd_error=probe.error,
-        ultimo_escaneo={
-            "id": ultimo.id,
-            "ran_at": ultimo.ran_at.isoformat(),
-            "kind": ultimo.kind,
-            "added_files": ultimo.added_files,
-            "removed_files": ultimo.removed_files,
-            "changed_files": ultimo.changed_files,
-            "added_folders": ultimo.added_folders,
-            "removed_folders": ultimo.removed_folders,
-        } if ultimo else None,
+        ultimo_escaneo=(
+            {
+                "id": ultimo.id,
+                "ran_at": ultimo.ran_at.isoformat(),
+                "kind": ultimo.kind,
+                "added_files": ultimo.added_files,
+                "removed_files": ultimo.removed_files,
+                "changed_files": ultimo.changed_files,
+                "added_folders": ultimo.added_folders,
+                "removed_folders": ultimo.removed_folders,
+            }
+            if ultimo
+            else None
+        ),
     )
 
 
 @router.post("/dump", response_model=SyncRunOut)
-def sync_from_dump(request: Request,
-                   body: DumpRequest | None = None) -> SyncRunOut:
+def sync_from_dump(request: Request, body: DumpRequest | None = None) -> SyncRunOut:
     """Escanea el volcado configurado (o `path`) y aplica el diff incremental."""
     dump = Path(body.path) if (body and body.path) else Path(settings.resolved_dump)
     try:
@@ -64,8 +67,7 @@ def sync_from_dump(request: Request,
     except FileNotFoundError:
         raise HTTPException(404, f"Volcado no encontrado: {dump}") from None
     try:
-        resumen = refresh(request.app.state.engine, parsed, kind="dump",
-                          source_path=dump)
+        resumen = refresh(request.app.state.engine, parsed, kind="dump", source_path=dump)
     except RuntimeError as exc:  # guard anti-vaciado del sync
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return SyncRunOut(ok=True, snapshot=None, resumen=resumen)
@@ -79,8 +81,9 @@ def sync_from_megacmd(request: Request) -> SyncRunOut:
     except megacmd.MegaCmdUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     try:
-        resumen = refresh(request.app.state.engine, parse_text(text),
-                          kind="megacmd", source_path="megacmd")
+        resumen = refresh(
+            request.app.state.engine, parse_text(text), kind="megacmd", source_path="megacmd"
+        )
     except RuntimeError as exc:  # guard anti-vaciado del sync
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return SyncRunOut(ok=True, snapshot=None, resumen=resumen)

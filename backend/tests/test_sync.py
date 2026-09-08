@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.enrich import run as enrich_run
 from app.library import current_snapshot
 from app.models import Node, SyncLog, Title
 from app.sync import refresh_text
@@ -13,7 +14,6 @@ from app.sync import refresh_text
 from .conftest import build_app
 from .sample_dump import SAMPLE_DUMP
 from .test_igdb import _procesar_stub
-from app.enrich import run as enrich_run
 
 # Volcado "vacío" (solo carpetas, 0 archivos) → el guard debe abortar.
 TEXTO_SIN_ARCHIVOS = (
@@ -25,8 +25,7 @@ TEXTO_SIN_ARCHIVOS = (
 )
 
 BLOQUE_DLC = (
-    "|   |   |-- [FOLDER] D-LC/\n"
-    "|   |   |   `-- [FILE] game1.dlc1.part1.rar  (1024 bytes)\n"
+    "|   |   |-- [FOLDER] D-LC/\n" "|   |   |   `-- [FILE] game1.dlc1.part1.rar  (1024 bytes)\n"
 )
 SECTOR_Z_VIEJO = (
     "|-- [FOLDER] -- Z/\n"
@@ -75,11 +74,11 @@ def test_sync_incremental_suma_y_resta_sin_reconstruir(tmp_path):
     enrich_run(engine, procesar=_procesar_stub)
 
     stats = refresh_text(engine, _cambiar(SAMPLE_DUMP))
-    assert stats["removed_files"] == 1            # game1.dlc1…
-    assert stats["removed_folders"] == 1          # D-LC
-    assert stats["added_files"] == 1              # zoo.part1.rar
-    assert stats["added_folders"] == 2            # Zoo Tycoon Plus + B-ASE
-    assert stats["changed_files"] == 1            # game1.part1.rar tamaño
+    assert stats["removed_files"] == 1  # game1.dlc1…
+    assert stats["removed_folders"] == 1  # D-LC
+    assert stats["added_files"] == 1  # zoo.part1.rar
+    assert stats["added_folders"] == 2  # Zoo Tycoon Plus + B-ASE
+    assert stats["changed_files"] == 1  # game1.part1.rar tamaño
     assert stats["bootstrap"] is False
 
     with Session(engine) as session:
@@ -89,9 +88,7 @@ def test_sync_incremental_suma_y_resta_sin_reconstruir(tmp_path):
 
         assert session.get(Snapshot, sid).file_count == 6  # -1 (dlc) +1 (zoo)
 
-        nodos = session.execute(
-            select(Node).where(Node.snapshot_id == sid)
-        ).scalars().all()
+        nodos = session.execute(select(Node).where(Node.snapshot_id == sid)).scalars().all()
         rutas = {n.path for n in nodos}
         # Sustracción aplicada y adición aplicada.
         assert not any("game1.dlc1" in p for p in rutas)
@@ -99,12 +96,13 @@ def test_sync_incremental_suma_y_resta_sin_reconstruir(tmp_path):
 
         titulos = {
             t.name: t
-            for t in session.execute(
-                select(Title).where(Title.snapshot_id == sid)
-            ).scalars()
+            for t in session.execute(select(Title).where(Title.snapshot_id == sid)).scalars()
         }
         assert set(titulos) == {
-            "A Game One", "A Second Game", "Zelda Echoes of Wisdom", "Zoo Tycoon Plus",
+            "A Game One",
+            "A Second Game",
+            "Zelda Echoes of Wisdom",
+            "Zoo Tycoon Plus",
         }
         zelda = titulos["Zelda Echoes of Wisdom"]
         # El enriquecimiento IGDB se CONSERVA.
@@ -136,6 +134,7 @@ def test_sync_idempotente_sin_cambios(tmp_path):
     assert stats["changed_files"] == 0
     assert stats["removed_folders"] == 0
 
+
 def test_sync_volcado_vacio_no_borra(tmp_path):
     """Blindaje: un volcado sin archivos NUNCA vacía la biblioteca por error."""
     app = build_app(tmp_path, SAMPLE_DUMP)
@@ -164,7 +163,6 @@ def test_sync_volcado_vacio_con_allow_forzado(tmp_path):
     assert stats["removed_files"] > 0
 
 
-
 def test_router_sync_dump_vacio_devuelve_400_y_no_toca_bd(tmp_path):
     """Blindaje de API: POST /api/sync/dump con un volcado sin archivos → 400."""
     from fastapi.testclient import TestClient
@@ -172,9 +170,7 @@ def test_router_sync_dump_vacio_devuelve_400_y_no_toca_bd(tmp_path):
     app = build_app(tmp_path, SAMPLE_DUMP)
     vacio = tmp_path / "vacio.txt"
     vacio.write_text(
-        "SECTOR: INSHARE x:BCKP1\n"
-        "[ROOT] INSHARE x:BCKP1/\n"
-        "    [FOLDER] -- A/\n",
+        "SECTOR: INSHARE x:BCKP1\n" "[ROOT] INSHARE x:BCKP1/\n" "    [FOLDER] -- A/\n",
         encoding="utf-8",
     )
     with TestClient(app) as c:

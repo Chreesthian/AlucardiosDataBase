@@ -66,7 +66,9 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("IGDB_CLIENT_SECRET", "ALUCARD_IGDB_CLIENT_SECRET"),
     )
     igdb_base_url: str = "https://api.igdb.com/v4"
-    igdb_token_url: str = "https://id.twitch.tv/oauth2/token"
+    igdb_token_url: str = (
+        "https://id.twitch.tv/oauth2/token"  # noqa: S105 — URL OAuth, no una credencial
+    )
     igdb_throttle_seconds: float = 0.3
 
     # ── Derivados ──────────────────────────────────────────

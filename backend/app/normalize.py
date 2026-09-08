@@ -38,7 +38,7 @@ def ext_of(name: str) -> str | None:
     return name.rsplit(".", 1)[1].strip().lower() or None
 
 
-def format_bytes(n: int | float) -> str:
+def format_bytes(n: float) -> str:
     """Tamaño legible (p. ej. 1.48 TiB)."""
     value = float(n)
     for unit in ("B", "KiB", "MiB", "GiB", "TiB", "PiB"):

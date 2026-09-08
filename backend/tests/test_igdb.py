@@ -5,10 +5,8 @@ from __future__ import annotations
 from sqlalchemy import select
 
 from app.enrich import (
-    aplicar,
     listar_trabajo,
     necesita_trabajo,
-    procesar_con_connector,
     run,
     version,
 )
@@ -46,9 +44,10 @@ def test_limpieza_titulo():
     assert titulo_para_igdb("1 2 Switch") == "1 2 switch"
     assert titulo_para_igdb("Among Us") == "among us"
     assert titulo_para_igdb("Super Smash Bros Ultimate") == "super smash bros ultimate"
-    assert titulo_para_igdb(
-        "ACE COMBAT 7 SKIES UNKNOWN DELUXE EDITION"
-    ) == "ace combat 7 skies unknown deluxe edition"
+    assert (
+        titulo_para_igdb("ACE COMBAT 7 SKIES UNKNOWN DELUXE EDITION")
+        == "ace combat 7 skies unknown deluxe edition"
+    )
     assert titulo_para_igdb("Alan Wake Remastered") == "alan wake remastered"
     assert titulo_para_igdb("Ace Attorney Investigations Collection") == (
         "ace attorney investigations collection"
@@ -57,18 +56,20 @@ def test_limpieza_titulo():
 
 def test_imagen_igdb_normalizada():
     url = "//images.igdb.com/igdb/image/upload/t_thumb/co8d9b.jpg"
-    assert _imagen_igdb(url) == (
-        "https://images.igdb.com/igdb/image/upload/t_cover_big/co8d9b.jpg"
-    )
+    assert _imagen_igdb(url) == ("https://images.igdb.com/igdb/image/upload/t_cover_big/co8d9b.jpg")
     assert _imagen_igdb(None) is None
 
 
 def test_ficha_desde_raw():
-    juego = JuegoIgdb.from_raw({
-        "name": "Zelda", "slug": "zelda",
-        "cover": {"url": "//images.igdb.com/igdb/image/upload/t_thumb/x.jpg"},
-        "platforms": [{"name": "Nintendo Switch"}], "genres": [{"name": "Adventure"}],
-    })
+    juego = JuegoIgdb.from_raw(
+        {
+            "name": "Zelda",
+            "slug": "zelda",
+            "cover": {"url": "//images.igdb.com/igdb/image/upload/t_thumb/x.jpg"},
+            "platforms": [{"name": "Nintendo Switch"}],
+            "genres": [{"name": "Adventure"}],
+        }
+    )
     ficha = ficha_desde_juego(juego)
     assert ficha["slug"] == "zelda"
     assert ficha["caratula"].startswith("https://images.igdb.com/")
@@ -103,9 +104,7 @@ def test_titulo_libre_conserva_consola_del_titulo():
     # búsqueda debe conservarlo (si se quita, el match cae en "Langrisser I & II").
     assert titulo_para_igdb("1 2 Switch") == "1 2 switch"
     assert _titulo_busqueda_libre("1 2 Switch") == "1 2 switch"
-    assert _titulo_busqueda_libre("The Legend of Zelda (2023)") == (
-        "legend of zelda"
-    )
+    assert _titulo_busqueda_libre("The Legend of Zelda (2023)") == ("legend of zelda")
 
 
 def test_enriquecimiento_v2_marca_ficha_y_no_repite(tmp_path):
@@ -113,9 +112,9 @@ def test_enriquecimiento_v2_marca_ficha_y_no_repite(tmp_path):
     engine = app.state.engine
 
     stats = run(engine, procesar=_procesar_stub)
-    assert stats["ok"] == 1          # solo "Zelda Echoes of Wisdom"
-    assert stats["detalle"] == 1     # ficha completa v2
-    assert stats["miss"] == 2        # los dos "A …" sin match
+    assert stats["ok"] == 1  # solo "Zelda Echoes of Wisdom"
+    assert stats["detalle"] == 1  # ficha completa v2
+    assert stats["miss"] == 2  # los dos "A …" sin match
     assert stats["cobertura"] == 1
     assert stats["con_detalle"] == 1
 
@@ -124,9 +123,7 @@ def test_enriquecimiento_v2_marca_ficha_y_no_repite(tmp_path):
 
     with Session(engine) as session:
         snap = current_snapshot(session)
-        rows = session.execute(
-            select(Title).where(Title.snapshot_id == snap.id)
-        ).scalars().all()
+        rows = session.execute(select(Title).where(Title.snapshot_id == snap.id)).scalars().all()
         por_nombre = {t.name: t for t in rows}
         zelda = por_nombre["Zelda Echoes of Wisdom"]
         assert zelda.igdb_cover == "https://images.igdb.com/c.jpg"
@@ -145,21 +142,21 @@ def test_enriquecimiento_v2_marca_ficha_y_no_repite(tmp_path):
 
 def test_necesita_trabajo_segun_version():
     assert necesita_trabajo(None) is True
-    assert necesita_trabajo({"slug": "x"}) is True          # v1 básica → ficha
-    assert necesita_trabajo({"miss": True}) is True         # miss antiguo
+    assert necesita_trabajo({"slug": "x"}) is True  # v1 básica → ficha
+    assert necesita_trabajo({"miss": True}) is True  # miss antiguo
     assert necesita_trabajo({"ficha_v": 2, "slug": "x"}) is False
     assert necesita_trabajo({"ficha_v": 2, "miss": True}) is False
 
 
 # ── Matcher v3 (lógica pura, sin red) ───────────────────────────────────────
 
+
 def test_v3_compacta_letras_espaciadas():
-    assert _compactar_letras_espaciadas("s n i p e r hunter scope") == (
-        "sniper hunter scope"
+    assert _compactar_letras_espaciadas("s n i p e r hunter scope") == ("sniper hunter scope")
+    assert (
+        _compactar_letras_espaciadas("c a r d s  rpg the misty battlefield")
+        == "cards rpg the misty battlefield"
     )
-    assert _compactar_letras_espaciadas(
-        "c a r d s  rpg the misty battlefield"
-    ) == "cards rpg the misty battlefield"
     # Palabras reales de una letra no se mezclan con ruido: "box boy" intacto.
     assert _compactar_letras_espaciadas("box boy") == "box boy"
     assert _compactar_letras_espaciadas("a b c") == "abc"  # acrónimo espaciado
@@ -183,9 +180,7 @@ def test_v3_puerta_recupera_y_rechaza():
 
 def test_v3_core_decorativo_exacto():
     # '… Nintendo Switch Edition' al final → núcleo exacto 'Beyond Hanwell'.
-    assert _encaja_core_decorativo(
-        "beyond hanwell nintendo switch edition", "Beyond Hanwell"
-    )
+    assert _encaja_core_decorativo("beyond hanwell nintendo switch edition", "Beyond Hanwell")
     # Números NO se consideran decorativos: 'Pikmin 4' ≠ 'Pikmin'.
     assert not _encaja_core_decorativo("pikmin 4", "Pikmin")
     # Núcleo de una sola palabra no aplica (evita falsos positivos).
@@ -194,25 +189,41 @@ def test_v3_core_decorativo_exacto():
 
 def test_v3_constructores_ficha_ampliada():
     # Lanzamientos por plataforma, ordenados y con región humana.
-    lanz = _lanzamientos_desde([
-        {"platform": {"name": "Nintendo Switch"}, "date": 1747526400,
-         "human": "May 18, 2025", "region": 8},
-        {"platform": {"name": "PC"}, "date": 1717000000, "human": "May 30, 2024"},
-        {"platform": {"name": "Nintendo Switch 2"}, "date": 1748880000,
-         "human": "Jun 5, 2025", "region": 1},
-    ])
+    lanz = _lanzamientos_desde(
+        [
+            {
+                "platform": {"name": "Nintendo Switch"},
+                "date": 1747526400,
+                "human": "May 18, 2025",
+                "region": 8,
+            },
+            {"platform": {"name": "PC"}, "date": 1717000000, "human": "May 30, 2024"},
+            {
+                "platform": {"name": "Nintendo Switch 2"},
+                "date": 1748880000,
+                "human": "Jun 5, 2025",
+                "region": 1,
+            },
+        ]
+    )
     assert lanz[0]["plataforma"] == "PC"
     assert lanz[0]["fecha"] == "2024-05-29"
-    assert any(l["plataforma"] == "Nintendo Switch" and l["region"] == "Mundial"
-               and l["humano"] == "May 18, 2025" for l in lanz)
+    assert any(
+        x["plataforma"] == "Nintendo Switch"
+        and x["region"] == "Mundial"
+        and x["humano"] == "May 18, 2025"
+        for x in lanz
+    )
     assert lanz[-1]["plataforma"] == "Nintendo Switch 2"
     assert lanz[-1]["region"] == "Europa"
 
     # Enlaces: websites con categoría conocida + tiendas externas por dominio.
     enlaces = _enlaces_desde(
         [{"category": 1, "url": "https://www.example.com/"}],
-        [{"url": "https://store.steampowered.com/app/2993780"},
-         {"url": "https://www.xbox.com/en-us/games/x"}],
+        [
+            {"url": "https://store.steampowered.com/app/2993780"},
+            {"url": "https://www.xbox.com/en-us/games/x"},
+        ],
     )
     etiquetas = {e["etiqueta"] for e in enlaces}
     assert "Web oficial" in etiquetas
@@ -220,11 +231,13 @@ def test_v3_constructores_ficha_ampliada():
     assert "Xbox" in etiquetas
 
     # Idiomas únicos.
-    idiomas = _idiomas_desde([
-        {"language": {"name": "English", "locale": "en"}},
-        {"language": {"name": "English", "locale": "en-US"}},
-        {"language": {"name": "Spanish (Spain)", "locale": "es-ES"}},
-    ])
+    idiomas = _idiomas_desde(
+        [
+            {"language": {"name": "English", "locale": "en"}},
+            {"language": {"name": "English", "locale": "en-US"}},
+            {"language": {"name": "Spanish (Spain)", "locale": "es-ES"}},
+        ]
+    )
     assert idiomas == ["English", "Spanish (Spain)"]
 
     # Clasificaciones.

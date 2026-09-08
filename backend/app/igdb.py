@@ -21,7 +21,7 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Self, cast
 
 import httpx
 
@@ -30,8 +30,13 @@ from .config import Settings, get_settings
 # Enums de clasificación por edad (IGDB v4): organization 2=PEGI, 1=ESRB.
 PEGI = {8: "PEGI 3", 9: "PEGI 7", 10: "PEGI 12", 11: "PEGI 16", 12: "PEGI 18"}
 ESRB = {
-    1: "ESRB RP", 2: "ESRB EC", 3: "ESRB E", 4: "ESRB E10+", 5: "ESRB T",
-    6: "ESRB M", 7: "ESRB AO",
+    1: "ESRB RP",
+    2: "ESRB EC",
+    3: "ESRB E",
+    4: "ESRB E10+",
+    5: "ESRB T",
+    6: "ESRB M",
+    7: "ESRB AO",
 }
 _ORG_PEGI = 2
 _ORG_ESRB = 1
@@ -65,6 +70,25 @@ class Cover:
     url: str | None = None
 
 
+def _como_dict(valor: Any) -> dict[str, Any]:
+    """Normaliza un campo objeto de IGDB (dict o ausente) a dict tipado."""
+    return cast("dict[str, Any]", valor) if isinstance(valor, dict) else {}
+
+
+def _como_lista(valor: Any) -> list[Any]:
+    """Normaliza un campo lista de IGDB (lista o ausente) a list tipada."""
+    return cast("list[Any]", valor) if isinstance(valor, list) else []
+
+
+def _como_items(valor: Any) -> list[dict[str, Any]]:
+    """Normaliza un campo lista-de-objetos de IGDB a lista de dicts tipados."""
+    if not isinstance(valor, list):
+        return []
+    return [
+        cast("dict[str, Any]", item) for item in cast("list[Any]", valor) if isinstance(item, dict)
+    ]
+
+
 @dataclass
 class JuegoIgdb:
     """Resultado de búsqueda IGDB (subconjunto con lo que usa la ficha)."""
@@ -77,13 +101,13 @@ class JuegoIgdb:
     first_release_date: int | None = None
     url: str | None = None
     cover: Cover = field(default_factory=Cover)
-    platforms: list[str] = field(default_factory=list)
-    genres: list[str] = field(default_factory=list)
-    age_ratings: list[AgeRating] = field(default_factory=list)
+    platforms: list[str] = field(default_factory=lambda: cast("list[str]", []))
+    genres: list[str] = field(default_factory=lambda: cast("list[str]", []))
+    age_ratings: list[AgeRating] = field(default_factory=lambda: cast("list[AgeRating]", []))
 
     @classmethod
-    def from_raw(cls, d: dict[str, Any]) -> "JuegoIgdb":
-        cover = d.get("cover") or {}
+    def from_raw(cls, d: dict[str, Any]) -> JuegoIgdb:
+        cover = _como_dict(d.get("cover"))
         return cls(
             name=str(d.get("name") or ""),
             slug=d.get("slug"),
@@ -93,12 +117,14 @@ class JuegoIgdb:
             first_release_date=d.get("first_release_date"),
             url=d.get("url"),
             cover=Cover(url=cover.get("url")),
-            platforms=[p.get("name") for p in d.get("platforms", []) if p.get("name")],
-            genres=[g.get("name") for g in d.get("genres", []) if g.get("name")],
+            platforms=[p.get("name") for p in _como_lista(d.get("platforms")) if p.get("name")],
+            genres=[g.get("name") for g in _como_lista(d.get("genres")) if g.get("name")],
             age_ratings=[
-                AgeRating(a.get("organization"), a.get("rating_category"))
-                for a in d.get("age_ratings", [])
-                if isinstance(a, dict)
+                AgeRating(
+                    cast("int | None", a.get("organization")),
+                    cast("int | None", a.get("rating_category")),
+                )
+                for a in _como_items(d.get("age_ratings"))
             ],
         )
 
@@ -145,8 +171,14 @@ def _pegi_desde(juego: JuegoIgdb) -> str | None:
 
 # Numerales romanos sueltos → arábigos. Se excluyen "v" y "x" (GTA V, Pokémon X).
 _ROMANOS = {
-    "i": "1", "ii": "2", "iii": "3", "iv": "4", "vi": "6", "vii": "7",
-    "viii": "8", "ix": "9",
+    "i": "1",
+    "ii": "2",
+    "iii": "3",
+    "iv": "4",
+    "vi": "6",
+    "vii": "7",
+    "viii": "8",
+    "ix": "9",
 }
 
 # Alias regionales (Europa/EE.UU. y castellano → título IGDB canónico).
@@ -201,6 +233,7 @@ _ALIASES_TITULO = {
     "detective pikachu el regreso": "detective pikachu returns",
 }
 
+
 def titulo_para_igdb(nombre: str) -> str:
     """Normaliza un título (NOMBRE REAL de juego) para buscar en IGDB.
 
@@ -236,13 +269,10 @@ def _puntuacion(termino_limpio: str, candidato: str) -> int:
         for j in range(len(nombre)):
             k = 0
             while (
-                i + k < len(consulta)
-                and j + k < len(nombre)
-                and consulta[i + k] == nombre[j + k]
+                i + k < len(consulta) and j + k < len(nombre) and consulta[i + k] == nombre[j + k]
             ):
                 k += 1
-            if k > mejor:
-                mejor = k
+            mejor = max(mejor, k)
     return mejor
 
 
@@ -285,15 +315,34 @@ def ficha_desde_juego(juego: JuegoIgdb) -> dict[str, Any]:
 
 # `status` de IGDB: 0 cancelado, 2 anunciado, 3 beta, 4 alfa, 5 en desarrollo…
 _ESTADOS_IGDB = {
-    0: "Cancelado", 2: "Anunciado", 3: "Beta", 4: "Alfa", 5: "En desarrollo",
-    6: "Rumoreado", 7: "Retrasado",
+    0: "Cancelado",
+    2: "Anunciado",
+    3: "Beta",
+    4: "Alfa",
+    5: "En desarrollo",
+    6: "Rumoreado",
+    7: "Retrasado",
 }
 # Categorías de webs de IGDB (v4 `websites.category`).
 _CATEGORIA_WEB = {
-    1: "Web oficial", 2: "Web", 3: "Wikipedia", 4: "Facebook", 5: "Twitter",
-    6: "Twitch", 8: "Instagram", 9: "YouTube", 10: "iPhone", 11: "iPad",
-    12: "Android", 13: "Steam", 14: "Reddit", 15: "Itch", 16: "Epic Games",
-    17: "GOG", 18: "Discord", 19: "ProtonDB",
+    1: "Web oficial",
+    2: "Web",
+    3: "Wikipedia",
+    4: "Facebook",
+    5: "Twitter",
+    6: "Twitch",
+    8: "Instagram",
+    9: "YouTube",
+    10: "iPhone",
+    11: "iPad",
+    12: "Android",
+    13: "Steam",
+    14: "Reddit",
+    15: "Itch",
+    16: "Epic Games",
+    17: "GOG",
+    18: "Discord",
+    19: "ProtonDB",
 }
 
 
@@ -306,7 +355,7 @@ def _ficha_detallada_desde(datos: dict[str, Any]) -> dict[str, Any]:
     (YouTube), webs, similares, colección, franquicia y estado.
     """
 
-    def _pegi(raw_ratings: list | None) -> str | None:
+    def _pegi(raw_ratings: list[dict[str, Any]] | None) -> str | None:
         for r in raw_ratings or []:
             if r.get("organization") == _ORG_PEGI and r.get("rating_category"):
                 return PEGI.get(r["rating_category"])
@@ -318,26 +367,28 @@ def _ficha_detallada_desde(datos: dict[str, Any]) -> dict[str, Any]:
     def _num(v: Any) -> float | None:
         return round(float(v), 1) if v is not None else None
 
-    cover = (datos.get("cover") or {}).get("url")
+    cover = _como_dict(datos.get("cover")).get("url")
     companias = [
-        (c.get("company") or {}).get("name")
-        for c in datos.get("involved_companies", []) if c.get("company")
+        _como_dict(c.get("company")).get("name")
+        for c in datos.get("involved_companies", [])
+        if c.get("company")
     ]
     desarrollador = next(
         (n for n in companias if n), None
     )  # fallback simple; mejor abajo por flags
     publicador = None
     for c in datos.get("involved_companies", []):
-        if c.get("developer") and c.get("company", {}).get("name"):
-            desarrollador = c["company"]["name"]
-        if c.get("publisher") and c.get("company", {}).get("name"):
-            publicador = c["company"]["name"]
+        empresa = _como_dict(c.get("company"))
+        if c.get("developer") and empresa.get("name"):
+            desarrollador = empresa["name"]
+        if c.get("publisher") and empresa.get("name"):
+            publicador = empresa["name"]
 
     return {
         "ficha_v": 2,
         "nombre_oficial": datos.get("name"),
         "slug": datos.get("slug"),
-        "descripcion": datos.get("summary"),        # sinopsis
+        "descripcion": datos.get("summary"),  # sinopsis
         "argumento": datos.get("storyline") or None,  # historia detallada
         "caratula": _imagen_igdb(cover),
         "rating": _num(datos.get("rating")),
@@ -353,78 +404,100 @@ def _ficha_detallada_desde(datos: dict[str, Any]) -> dict[str, Any]:
         "perspectivas": [
             p.get("name") for p in datos.get("player_perspectives", []) if p.get("name")
         ],
-        "palabras_clave": [
-            k.get("name") for k in datos.get("keywords", []) if k.get("name")
-        ][:20],
+        "palabras_clave": [k.get("name") for k in datos.get("keywords", []) if k.get("name")][:20],
         "desarrollador": desarrollador,
         "publicador": publicador,
         "fecha_lanzamiento": _fecha_iso(datos.get("first_release_date")),
-        "estado": _ESTADOS_IGDB.get(datos.get("status")) if datos.get("status") is not None else None,
+        "estado": (
+            _ESTADOS_IGDB.get(cast("int", datos.get("status")))
+            if datos.get("status") is not None
+            else None
+        ),
         "capturas": [
             _imagen_igdb(s.get("url"), "t_screenshot_huge")
-            for s in datos.get("screenshots", []) if s.get("url")
+            for s in datos.get("screenshots", [])
+            if s.get("url")
         ],
         "videos": [
             {"nombre": v.get("name"), "video_id": v.get("video_id")}
-            for v in datos.get("videos", []) if v.get("video_id")
+            for v in datos.get("videos", [])
+            if v.get("video_id")
         ],
         "webs": [
             {"categoria": _CATEGORIA_WEB.get(w.get("category"), "Web"), "url": w.get("url")}
-            for w in datos.get("websites", []) if w.get("url")
+            for w in datos.get("websites", [])
+            if w.get("url")
         ],
         "similares": [
             {
                 "nombre": s.get("name"),
                 "slug": s.get("slug"),
-                "caratula": _imagen_igdb((s.get("cover") or {}).get("url")),
+                "caratula": _imagen_igdb(_como_dict(s.get("cover")).get("url")),
                 "rating": _num(s.get("rating")),
             }
-            for s in datos.get("similar_games", []) if s.get("slug")
+            for s in datos.get("similar_games", [])
+            if s.get("slug")
         ],
-        "coleccion": min(
-            (c.get("name") for c in datos.get("collections", []) if c.get("name")), key=len
-        ) if datos.get("collections") else None,
-        "franquicia": (datos.get("franchise") or {}).get("name"),
-        "url_igdb": f"https://www.igdb.com/games/{datos.get('slug')}" if datos.get("slug") else None,
+        "coleccion": (
+            min((c.get("name") for c in datos.get("collections", []) if c.get("name")), key=len)
+            if datos.get("collections")
+            else None
+        ),
+        "franquicia": _como_dict(datos.get("franchise")).get("name"),
+        "url_igdb": (
+            f"https://www.igdb.com/games/{datos.get('slug')}" if datos.get("slug") else None
+        ),
     }
 
 
 _REGIONES_IGDB = {
-    1: "Europa", 2: "Norteamérica", 3: "Australia", 4: "Nueva Zelanda",
-    5: "Japón", 6: "China", 7: "Asia", 8: "Mundial",
+    1: "Europa",
+    2: "Norteamérica",
+    3: "Australia",
+    4: "Nueva Zelanda",
+    5: "Japón",
+    6: "China",
+    7: "Asia",
+    8: "Mundial",
 }
 _ORG_SISTEMA = {1: "ESRB", 2: "PEGI", 3: "CERO"}
 
 
-def _texto_clasificacion(r: dict) -> str | None:
+def _texto_clasificacion(r: dict[str, Any]) -> str | None:
     """Texto legible de una clasificación de edad (PEGI/ESRB/CERO…)."""
     org = r.get("organization")
     cat = r.get("rating_category")
     if org == _ORG_PEGI:
-        return PEGI.get(cat) or "PEGI"
+        return PEGI.get(cast("int", cat)) or "PEGI"
     if org == _ORG_ESRB:
-        return ESRB.get(cat) or "ESRB"
+        return ESRB.get(cast("int", cat)) or "ESRB"
     if org == 3:  # CERO (sin mapeo numérico público fiable)
         return "CERO"
     return None
 
 
-def _lanzamientos_desde(rows: list | None) -> list[dict]:
+def _lanzamientos_desde(rows: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
     """Lanzamientos por plataforma (detalle 'Releases' de la web de IGDB)."""
-    salida: list[dict] = []
-    vistos: set[tuple] = set()
+    salida: list[dict[str, Any]] = []
+    vistos: set[tuple[Any, ...]] = set()
     for r in sorted(rows or [], key=lambda x: (x.get("date") is None, x.get("date") or 0)):
-        plataforma = (r.get("platform") or {}).get("name")
+        plataforma = _como_dict(r.get("platform")).get("name")
         clave = (plataforma, r.get("human"), r.get("date"))
         if not plataforma or clave in vistos:
             continue
         vistos.add(clave)
-        salida.append({
-            "plataforma": plataforma,
-            "fecha": _fecha_iso(r.get("date")),
-            "humano": r.get("human"),
-            "region": _REGIONES_IGDB.get(r.get("region")) if r.get("region") is not None else None,
-        })
+        salida.append(
+            {
+                "plataforma": plataforma,
+                "fecha": _fecha_iso(r.get("date")),
+                "humano": r.get("human"),
+                "region": (
+                    _REGIONES_IGDB.get(cast("int", r.get("region")))
+                    if r.get("region") is not None
+                    else None
+                ),
+            }
+        )
     return salida[:60]
 
 
@@ -434,13 +507,22 @@ def _etiqueta_url(url: str) -> str:
 
     host = (urlparse(url).hostname or "").lower()
     parejas = [
-        ("store.steampowered", "Steam"), ("steam", "Steam"), ("gog.com", "GOG"),
-        ("xbox.com", "Xbox"), ("microsoft.com", "Microsoft"),
-        ("playstation.com", "PlayStation"), ("nintendo.com", "Nintendo"),
-        ("nintendo.es", "Nintendo"), ("epicgames", "Epic Games"),
-        ("twitch.tv", "Twitch"), ("youtube.com", "YouTube"), ("discord", "Discord"),
-        ("reddit.com", "Reddit"), ("wikipedia.org", "Wikipedia"),
-        ("play.google.com", "Google Play"), ("apps.apple.com", "App Store"),
+        ("store.steampowered", "Steam"),
+        ("steam", "Steam"),
+        ("gog.com", "GOG"),
+        ("xbox.com", "Xbox"),
+        ("microsoft.com", "Microsoft"),
+        ("playstation.com", "PlayStation"),
+        ("nintendo.com", "Nintendo"),
+        ("nintendo.es", "Nintendo"),
+        ("epicgames", "Epic Games"),
+        ("twitch.tv", "Twitch"),
+        ("youtube.com", "YouTube"),
+        ("discord", "Discord"),
+        ("reddit.com", "Reddit"),
+        ("wikipedia.org", "Wikipedia"),
+        ("play.google.com", "Google Play"),
+        ("apps.apple.com", "App Store"),
     ]
     for marca, etiqueta in parejas:
         if marca in host:
@@ -448,16 +530,18 @@ def _etiqueta_url(url: str) -> str:
     return host.removeprefix("www.") or url[:40]
 
 
-def _enlaces_desde(websites: list | None, externos: list | None) -> list[dict]:
+def _enlaces_desde(
+    websites: list[dict[str, Any]] | None, externos: list[dict[str, Any]] | None
+) -> list[dict[str, Any]]:
     """Fusión de websites + external_games (Steam/Xbox/PlayStation/Nintendo…)."""
-    salida: list[dict] = []
+    salida: list[dict[str, Any]] = []
     vistos: set[str] = set()
     for w in websites or []:
         url = w.get("url")
         if not url or url in vistos:
             continue
         vistos.add(url)
-        categoria = _CATEGORIA_WEB.get(w.get("category"), "Web")
+        categoria = _CATEGORIA_WEB.get(cast("int", w.get("category")), "Web")
         etiqueta = categoria if categoria != "Web" else _etiqueta_url(url)
         salida.append({"etiqueta": etiqueta, "url": url})
     for e in externos or []:
@@ -469,17 +553,18 @@ def _enlaces_desde(websites: list | None, externos: list | None) -> list[dict]:
     return salida[:50]
 
 
-def _idiomas_desde(rows: list | None) -> list[str]:
+def _idiomas_desde(rows: list[dict[str, Any]] | None) -> list[str]:
     """Idiomas soportados (language_supports), únicos y por orden."""
     salida: list[str] = []
     vistos: set[str] = set()
     for r in rows or []:
-        nombre = (r.get("language") or {}).get("name")
-        locale = (r.get("language") or {}).get("locale")
+        idioma = _como_dict(r.get("language"))
+        nombre = idioma.get("name")
+        locale = idioma.get("locale")
         clave = nombre or locale or ""
         if clave and clave not in vistos:
             vistos.add(clave)
-            salida.append(nombre or locale)
+            salida.append(cast("str", nombre or locale))
     return salida[:40]
 
 
@@ -487,10 +572,19 @@ def _idiomas_desde(rows: list | None) -> list[str]:
 # "ACA NEOGEO METAL SLUG 3" → "Metal Slug 3"). Si la búsqueda con el prefijo no
 # encuentra nada, se reintenta sin él.
 _SERIES_PREFIJOS = (
-    "aca neogeo selection vol ", "aca neo geo selection vol ", "aca neogeo ",
-    "aca neo geo ", "arcade archives ", "neo geo ", "sega ages ", "konami arcade "
-    "classics ", "capcom arcade stadium ", "namco museum ", "atari flashback ",
-    "nintendo switch ", "nintendo classic mini ",
+    "aca neogeo selection vol ",
+    "aca neo geo selection vol ",
+    "aca neogeo ",
+    "aca neo geo ",
+    "arcade archives ",
+    "neo geo ",
+    "sega ages ",
+    ("konami arcade classics "),
+    "capcom arcade stadium ",
+    "namco museum ",
+    "atari flashback ",
+    "nintendo switch ",
+    "nintendo classic mini ",
 )
 
 
@@ -504,10 +598,10 @@ def _titulo_busqueda_libre(nombre: str) -> str:
     import re
     import unicodedata
 
-    nombre = re.sub(r"[’‘`´']", "", nombre)
+    nombre = re.sub(r"[’‘`´']", "", nombre)  # noqa: RUF001 — apóstrofos tipográficos a eliminar
     texto = unicodedata.normalize("NFKD", nombre)
     texto = "".join(c for c in texto if not unicodedata.combining(c)).lower()
-    texto = re.sub(r"\(\d{4}\)", " ", texto)          # "(2023)" → espacio
+    texto = re.sub(r"\(\d{4}\)", " ", texto)  # "(2023)" → espacio
     texto = re.sub(r"\(?\[?(?:v\d+(?:\.\d+)?)\]?\)?", " ", texto)  # "[v1.0.2]"
     texto = re.sub(r"[^a-z0-9 ]+", " ", texto)
     limpio = " ".join(texto.split())
@@ -520,7 +614,7 @@ def _variantes_para(limpio: str) -> list[str]:
     baja = limpio.lower()
     for prefijo in _SERIES_PREFIJOS:
         if baja.startswith(prefijo):
-            resto = limpio[len(prefijo):].strip()
+            resto = limpio[len(prefijo) :].strip()
             if resto and resto not in variantes:
                 variantes.append(resto)
     # Sin la coletilla típica de lanzamiento por volúmenes ("vol 1"/"vol. 1").
@@ -546,9 +640,23 @@ def _variantes_para(limpio: str) -> list[str]:
 # Palabras finales decorativas: al quitarlas del final, el núcleo sigue siendo
 # el MISMO juego (se usa solo si el núcleo coincide EXACTO con un candidato).
 _DECORATIVOS_FINAL = {
-    "nintendo", "switch", "edition", "deluxe", "special", "ultimate",
-    "complete", "collection", "remastered", "anniversary", "plus",
-    "vol", "volume", "select", "gold", "platinum", "hd",
+    "nintendo",
+    "switch",
+    "edition",
+    "deluxe",
+    "special",
+    "ultimate",
+    "complete",
+    "collection",
+    "remastered",
+    "anniversary",
+    "plus",
+    "vol",
+    "volume",
+    "select",
+    "gold",
+    "platinum",
+    "hd",
 }
 
 
@@ -626,9 +734,7 @@ def _aceptable_v3(limpio: str, candidato: str) -> bool:
     if ratio >= 0.72 and len(j_orig) >= 8 and (set(toks_orig) & set(toks_cand)):
         return True
     # Nombres de una palabra casi idénticos.
-    if len(toks_orig) == 1 and len(toks_cand) <= 2 and ratio >= 0.85:
-        return True
-    return False
+    return bool(len(toks_orig) == 1 and len(toks_cand) <= 2 and ratio >= 0.85)
 
 
 class IgdbConnector:
@@ -640,8 +746,9 @@ class IgdbConnector:
     confianza para no adjuntar fichas incorrectas.
     """
 
-    def __init__(self, *, settings: Settings | None = None,
-                 transport: httpx.Client | None = None) -> None:
+    def __init__(
+        self, *, settings: Settings | None = None, transport: httpx.Client | None = None
+    ) -> None:
         self.settings = settings or get_settings()
         self._http = transport or httpx.Client(
             headers={"User-Agent": self.settings.user_agent, "Accept": "application/json"},
@@ -654,10 +761,10 @@ class IgdbConnector:
     def close(self) -> None:
         self._http.close()
 
-    def __enter__(self) -> "IgdbConnector":
+    def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, *exc: Any) -> None:
+    def __exit__(self, *exc: object) -> None:
         self.close()
 
     # ── Configuración y token ───────────────────────────────────────────────
@@ -684,8 +791,8 @@ class IgdbConnector:
         respuesta = self._http.post(
             self.settings.igdb_token_url,
             params={
-                "client_id": self.settings.igdb_client_id,
-                "client_secret": self.settings.igdb_client_secret,
+                "client_id": self.settings.igdb_client_id or "",
+                "client_secret": self.settings.igdb_client_secret or "",
                 "grant_type": "client_credentials",
             },
         )
@@ -694,15 +801,16 @@ class IgdbConnector:
         self._token = str(respuesta.json()["access_token"])
         return self._token
 
-    def _post(self, endpoint: str, query: str) -> list[dict]:
+    def _post(self, endpoint: str, query: str) -> list[dict[str, Any]]:
         """POST Apicalypse a /v4/{endpoint} con reintento si el token caduca."""
+        client_id = self.settings.igdb_client_id or ""
         for intento in range(2):
             token = self._obtener_token()
             self._esperar_throttle()
             respuesta = self._http.post(
                 f"{self.settings.igdb_base_url}/{endpoint}",
                 headers={
-                    "Client-ID": self.settings.igdb_client_id,
+                    "Client-ID": client_id,
                     "Authorization": f"Bearer {token}",
                 },
                 content=query,
@@ -747,7 +855,11 @@ class IgdbConnector:
         )
 
     def mejor_juego_con_reintento(
-        self, termino_limpio: str, *, limite: int = 5, max_intentos: int = 5,
+        self,
+        termino_limpio: str,
+        *,
+        limite: int = 5,
+        max_intentos: int = 5,
     ) -> JuegoIgdb | None:
         """Como `mejor_juego`, suelta tokens finales si no hay match, con puerta
         de confianza (rechaza matches débiles). `max_intentos` acota llamadas."""
@@ -767,8 +879,9 @@ class IgdbConnector:
         """Ficha oficial (diccionario JSON para persistir)."""
         return ficha_desde_juego(juego)
 
-    def mejor_juego_ampliado(self, limpio: str, *, nombre: str | None = None,
-                             limite: int = 8, max_intentos: int = 5) -> JuegoIgdb | None:
+    def mejor_juego_ampliado(
+        self, limpio: str, *, nombre: str | None = None, limite: int = 8, max_intentos: int = 5
+    ) -> JuegoIgdb | None:
         """Como `mejor_juego_con_reintento` pero probando variantes.
 
         Orden de búsqueda:
@@ -787,14 +900,16 @@ class IgdbConnector:
             if v not in variantes:
                 variantes.append(v)
         for variante in variantes:
-            juego = self.mejor_juego_con_reintento(variante, limite=limite,
-                                                   max_intentos=max_intentos)
+            juego = self.mejor_juego_con_reintento(
+                variante, limite=limite, max_intentos=max_intentos
+            )
             if juego and _es_confiable(limpio, juego.name or ""):
                 return juego
         return None
 
-    def mejor_juego_v3(self, limpio: str, *, nombre: str | None = None,
-                       limite: int = 8) -> JuegoIgdb | None:
+    def mejor_juego_v3(
+        self, limpio: str, *, nombre: str | None = None, limite: int = 8
+    ) -> JuegoIgdb | None:
         """Match v3 (recuperación): conserva la puerta v2 y añade vías seguras.
 
         Orden:
@@ -806,6 +921,7 @@ class IgdbConnector:
         numéricas/de edición para que IGDB devuelva el juego real.
         """
         variantes: list[str] = []
+
         def _add(v: str | None) -> None:
             v = (v or "").strip()
             if v and v not in variantes:
@@ -817,10 +933,10 @@ class IgdbConnector:
         comp = _compactar_letras_espaciadas(limpio)
         _add(comp)
         toks = comp.split()
-        while len(toks) > 2:          # cola larga → núcleo progresivo
+        while len(toks) > 2:  # cola larga → núcleo progresivo
             toks = toks[:-1]
             _add(" ".join(toks))
-        if len(toks) == 2 and toks[-1].isdigit():   # 'Blasphemous 1' → núcleo
+        if len(toks) == 2 and toks[-1].isdigit():  # 'Blasphemous 1' → núcleo
             _add(toks[0])
         variantes = variantes[:7]
 
@@ -841,9 +957,9 @@ class IgdbConnector:
         orig = _compactar_letras_espaciadas(limpio).split()
         for v in variantes:
             vcore = v.split()
-            if len(vcore) < 2 or orig[:len(vcore)] != vcore:
+            if len(vcore) < 2 or orig[: len(vcore)] != vcore:
                 continue
-            caidos = orig[len(vcore):]
+            caidos = orig[len(vcore) :]
             if not caidos or not all(t in _DECORATIVOS_FINAL for t in caidos):
                 continue
             for j in juegos:
@@ -893,15 +1009,14 @@ class IgdbConnector:
         base = _ficha_detallada_desde(fila)
         # Artworks (imagen hero HD real de IGDB) a tamaño 1080p.
         artworks = [
-            _imagen_igdb(a.get("url"), "t_1080p")
-            for a in fila.get("artworks", []) if a.get("url")
+            _imagen_igdb(a.get("url"), "t_1080p") for a in fila.get("artworks", []) if a.get("url")
         ]
         base["artworks"] = artworks[:20]
         base["hero_imagen"] = artworks[0] if artworks else None
         base["lanzamientos"] = _lanzamientos_desde(fila.get("release_dates"))
         base["enlaces"] = _enlaces_desde(fila.get("websites"), fila.get("external_games"))
-        clasificaciones: list[dict] = []
-        visto_clasif: set[tuple] = set()
+        clasificaciones: list[dict[str, Any]] = []
+        visto_clasif: set[tuple[Any, ...]] = set()
         for r in fila.get("age_ratings", []):
             texto = _texto_clasificacion(r)
             sistema = _ORG_SISTEMA.get(r.get("organization"), "Clasificación")
@@ -917,11 +1032,10 @@ class IgdbConnector:
             try:
                 langs = self._post(
                     "language_supports",
-                    "fields game,language.name,language.locale; "
-                    f"where game={gid}; limit 80;",
+                    f"fields game,language.name,language.locale; where game={gid}; limit 80;",
                 )
                 base["idiomas_soporte"] = _idiomas_desde(langs)
-            except Exception:
+            except Exception:  # noqa: S110, BLE001
                 pass  # best-effort: el resto de la ficha se entrega igual
         return base
 

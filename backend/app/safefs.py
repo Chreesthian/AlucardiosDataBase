@@ -4,6 +4,7 @@ Evita el corner case de que un lector (web, otro worker) se encuentre un JSON a
 medio escribir si el proceso cae a mitad de `write_text`. Se escribe a un fichero
 temporal en el mismo directorio y luego `os.replace` (atómico en el mismo fs).
 """
+
 from __future__ import annotations
 
 import os

@@ -1,0 +1,80 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Calidad de código del repositorio — ruff (lint) y black (formato)
+# ──────────────────────────────────────────────────────────────────────────────
+# Herramientas instaladas como dependencias de desarrollo del paquete backend
+# (backend/pyproject.toml, grupo `dev`). Se invocan desde la raíz:
+#
+#     backend/.venv/bin/ruff  check . --fix       # lint (+ autofixes seguros)
+#     backend/.venv/bin/black --check .            # comprobación de formato
+#     backend/.venv/bin/black .                    # aplica el formato
+#
+# ruff descubre este fichero para todo el árbol Python del repo (backend,
+# scripts/, frontend/scripts/, utilidades de la raíz); black idem al ejecutarse
+# desde la raíz. La longitud de línea es común a ambas herramientas (100).
+
+[tool.black]
+# Longitud de línea compartida con [tool.ruff].line-length.
+line-length = 100
+# El backend declara `requires-python = ">=3.11"` (backend/pyproject.toml).
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+# `backend/` contiene el paquete `app`: con esta raíz, isort clasifica los
+# imports propios (`app.*`) como "primer-parte" y los ordena tras los de
+# terceros (FastAPI, SQLAlchemy…).
+src = ["backend"]
+
+[tool.ruff.lint]
+select = [
+  # ── pycodestyle: errores críticos y de formato básico ──────────────
+  "E4",    # estructura/importaciones incorrectas
+  "E7",    # comparaciones y sentencias ambiguas
+  "E9",    # errores de sintaxis/indentación detectables estáticamente
+  "W",     # avisos de estilo (sin conflictos con black, ver `ignore`)
+  # ── pyflakes: código muerto, imports sin uso, nombres sin definir ──
+  "F",
+  # ── isort: orden y agrupación de imports ───────────────────────────
+  "I",
+  # ── pyupgrade: sintaxis moderna para Python 3.11 ───────────────────
+  "UP",
+  # ── flake8-bugbear: bugs y antipatrones comunes ────────────────────
+  "B",
+  # ── flake8-blind-except: capturas ciegas de excepciones ────────────
+  "BLE",
+  # ── flake8-comprehensions: comprehensions/construcciones mejorables ─
+  "C4",
+  # ── flake8-simplify: expresiones simplificables ────────────────────
+  "SIM",
+  # ── reglas propias de ruff (noqa muertos, imports duplicados…) ─────
+  "RUF",
+  # ── bandit: seguridad (subprocess, pickle, secrets, asserts…) ──────
+  "S",
+  # ── ejecutables con shebang y permiso coherentes ───────────────────
+  "EXE",
+  # ── flake8-datetimez: prohibir `datetime` sin zona horaria ─────────
+  "DTZ",
+  # ── pylint: advertencias pragmáticas (PLW) ─────────────────────────
+  "PLW",
+]
+# Longitud de línea y reglas históricas incompatibles con black:
+# el formateador es quien garantiza E501/E203/W503.
+ignore = ["E203", "E501"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI inyecta dependencias mediante `Depends(...)` (y helpers de parámetros)
+# en los valores por defecto de los endpoints; es el patrón canónico (B008).
+extend-immutable-calls = [
+  "fastapi.Body", "fastapi.Cookie", "fastapi.Depends", "fastapi.File",
+  "fastapi.Form", "fastapi.Header", "fastapi.Path", "fastapi.Query",
+  "fastapi.Security",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# pytest usa `assert` como mecanismo principal de verificación (S101).
+"backend/tests/**" = ["S101"]
+# megacmd.py lanza *probes* de MEGAcmd y trata el código de retorno a mano;
+# `check=True` convertiría errores esperados en excepciones (PLW1510) y los
+# argumentos son rutas internas controladas por el propio indexador (S603).
+"backend/app/megacmd.py" = ["PLW1510", "S603"]
