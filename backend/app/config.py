@@ -1,6 +1,6 @@
 """Configuración central del backend.
 
-Sigue el patrón de proyecto-heredado/backend/core/config.py (pydantic-settings).
+Sigue el patrón de configuración pydantic-settings de un proyecto anterior.
 Todas las variables se leen con prefijo `ALUCARD_` desde el entorno o un `.env`.
 """
 
@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     mega_timeout_s: int = 180
 
     # ── IGDB / GamesDb (metadatos, fase F4) ────────────────
-    # Credenciales IGDB (Twitch) con los MISMOS nombres que un-conector-anterior
+    # Credenciales IGDB (Twitch) con los mismos nombres que el proyecto anterior
     # (IGDB_CLIENT_ID / IGDB_CLIENT_SECRET en .env) o con prefijo ALUCARD_.
     user_agent: str = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "

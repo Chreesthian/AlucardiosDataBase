@@ -1,6 +1,6 @@
 """Conector de IGDB (API v4) — metadatos oficiales de juegos.
 
-Copia del sistema de un-conector-anterior (src/gamechecker/connectors/igdb.py):
+Conector IGDB adaptado de un proyecto anterior:
 misma autenticación OAuth client_credentials, mismo rate-limit (0.3 s),
 misma limpieza de títulos (`titulo_para_igdb`) y mismo criterio de match
 (`mejor_juego_con_reintento`) que evita fichas incorrectas. De aquí salen la
@@ -133,7 +133,7 @@ def _pegi_desde(juego: JuegoIgdb) -> str | None:
     return None
 
 
-# NOTA IMPORTANTE (a diferencia de un-conector-anterior): aquí NO hay listas
+# NOTA IMPORTANTE (a diferencia del conector anterior): aquí NO hay listas
 # de "frases/tokens de ruido" (plataforma/edición/condición) que se eliminen del
 # título. Allí los productos venían de tiendas ("Pokémon Escarlata · Nintendo
 # Switch", "Seminuevo"…) y la consola se registraba aparte. Aquí las carpetas
@@ -204,7 +204,7 @@ _ALIASES_TITULO = {
 def titulo_para_igdb(nombre: str) -> str:
     """Normaliza un título (NOMBRE REAL de juego) para buscar en IGDB.
 
-    A diferencia de un-conector-anterior NO elimina palabras de plataforma/
+    A diferencia del conector anterior NO elimina palabras de plataforma/
     edición/condición (aquí no hay ruido de tienda; "Switch", "Edition",
     "Collection"… pueden ser parte del título real). Solo:
       - apóstrofes y acentos normalizados,
@@ -300,7 +300,7 @@ _CATEGORIA_WEB = {
 def _ficha_detallada_desde(datos: dict[str, Any]) -> dict[str, Any]:
     """Ficha IGDB COMPLETA de un juego (página de detalle).
 
-    Espejo de `_ficha_detallada_desde` de un-conector-anterior: sinopsis,
+    Espejo de `_ficha_detallada_desde` del conector anterior: sinopsis,
     argumento, ratings, votos, PEGI/ESRB, plataformas, géneros, temas, modos,
     perspectivas, palabras clave, desarrollador/editor, capturas, vídeos
     (YouTube), webs, similares, colección, franquicia y estado.
@@ -634,7 +634,7 @@ def _aceptable_v3(limpio: str, candidato: str) -> bool:
 class IgdbConnector:
     """Acceso a los metadatos oficiales de IGDB (busca por nombre de juego).
 
-    Igual que el `IgdbConnector` de un-conector-anterior: token cacheados por
+    Igual que el conector anterior: token cacheados por
     proceso con renovación automática, throttle de 0.3 s entre llamadas y
     reintento de tokens de IGDB con caída de tokens finales + puerta de
     confianza para no adjuntar fichas incorrectas.

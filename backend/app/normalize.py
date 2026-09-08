@@ -1,7 +1,7 @@
 """Helpers de normalización (nombres, slugs, extensiones).
 
-`normalize` (sin acentos, minúsculas) se usa igual que `productos.nombre_norm`
-en un-conector-anterior para búsquedas tolerantes.
+`normalize` (sin acentos, minúsculas) se usa para búsquedas tolerantes de
+nombres de juego (patrón heredado de un proyecto anterior).
 """
 
 from __future__ import annotations

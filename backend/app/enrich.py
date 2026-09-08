@@ -147,7 +147,7 @@ def run(engine, *, limit: int | None = None, full: bool = False,
         if not connector.configurado():
             raise IgdbNoConfigurado(
                 "IGDB no configurado: define IGDB_CLIENT_ID/IGDB_CLIENT_SECRET "
-                "en backend/.env (copia desde un-conector-anterior/.env)"
+                "en backend/.env (crea un cliente en dev.twitch.tv y copia las claves)"
             )
         procesar = procesar_con_connector(connector)
 

@@ -1,22 +1,33 @@
 #!/usr/bin/env python3
-"""Copia las credenciales IGDB ("GamesDb") desde un-conector-anterior/.env
-al .env del backend (nunca imprime los valores).
+"""Copia las credenciales IGDB ("GamesDb") desde un `.env` de origen
+al `.env` del backend (nunca imprime los valores).
 
 Uso:
-    python scripts/bootstrap_env.py [ruta_al_.env_de_gamechecker]
+    python scripts/bootstrap_env.py [ruta_al_.env_de_origen]
 
-Detecta por defecto el .env de la carpeta del escritorio.
+Si no se pasa ruta, usa `$IGDB_SOURCE_ENV` si está definida; en otro caso busca
+un `.env` de un proyecto hermano en el directorio del escritorio.
 """
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND_ENV = ROOT / "backend" / ".env"
-DEFAULT_SOURCE = ROOT.parent / "un-conector-anterior" / ".env"
+
+
+def _default_source() -> Path:
+    env = os.environ.get("IGDB_SOURCE_ENV")
+    if env:
+        return Path(env).expanduser()
+    return ROOT.parent / "proyecto-previo" / ".env"
+
+
+DEFAULT_SOURCE = _default_source()
 
 MAP = {
     "IGDB_CLIENT_ID": "IGDB_CLIENT_ID",

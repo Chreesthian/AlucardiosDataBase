@@ -2,10 +2,10 @@
 
 Objetivo general: un **frontend/backend webapp** que muestra en tiempo real los
 juegos alojados en una cuenta MEGA, con una experiencia funcionalmente idéntica
-a la del proyecto local `proyecto-heredado` (fork de *Scrob*: letterboxd/trakt
-self-hosted). Donde scrob usa TMDB para películas/series, aquí el catálogo es el
-árbol MEGA y los metadatos de carátula/ficha provienen de **IGDB** (credenciales
-"GamesDb" ya presentes en `un-conector-anterior/.env`).
+a la de *Scrob* (self-hosted de letterboxd/trakt). Donde Scrob usa TMDB para
+películas/series, aquí el catálogo es el árbol MEGA y los metadatos de
+carátula/ficha provienen de **IGDB** (credenciales "GamesDb" propias del
+despliegue, nunca versionadas).
 
 ## Fuente de datos (F0, verificado)
 
@@ -50,8 +50,8 @@ Decisiones:
   MEGAcmd real se conecta por MEGAcmd (cuenta ya con sesión en `~/.megaCmd`);
   el módulo `app.megacmd` aísla el binario para poder ejecutarlo en local.
 - **Metadatos (IGDB)**: módulo aislado que normaliza `nombre → búsqueda IGDB →
-  slug/carátula/ficha`, cacheado en BD (mismo patrón que `cache_igdb` de
-  un-conector-anterior). Credenciales leídas de ese `.env` sin exponerse.
+  slug/carátula/ficha`, cacheado en BD. Las credenciales se leen del entorno o
+  de `backend/.env`, nunca versionadas.
 
 ## Hoja de ruta
 

@@ -1,4 +1,4 @@
-"""Aplicación FastAPI (patrón análogo a proyecto-heredado/backend/main.py).
+"""Aplicación FastAPI (patrón análogo al de un proyecto anterior).
 
 `create_app()` permite inyectar Settings en tests (BD temporal).
 `app` es la instancia global que sirve uvicorn (`uvicorn app.main:app`).

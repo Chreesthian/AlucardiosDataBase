@@ -1,4 +1,4 @@
-"""Tests del sistema IGDB (paridad con un-conector-anterior) y del enriquecedor."""
+"""Tests del sistema IGDB (paridad con el conector de un proyecto anterior) y del enriquecedor."""
 
 from __future__ import annotations
 

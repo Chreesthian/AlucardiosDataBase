@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Arranca backend + frontend en local.
-# OJO: por convención se usan 7331 (API) y 7330 (web), como en proyecto-heredado.
+# OJO: por convención se usan 7331 (API) y 7330 (web), como en el proyecto anterior.
 # Si esos puertos ya están ocupados (p. ej. por otro scrob), cambia:
 #   ALUCARD_BACKEND_PORT=7441 ALUCARD_FRONTEND_PORT=7440 ./scripts/dev.sh
 set -euo pipefail
