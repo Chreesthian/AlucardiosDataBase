@@ -1,0 +1,38 @@
+# Python / uv
+__pycache__/
+*.py[cod]
+.venv/
+.ruff_cache/
+.pytest_cache/
+
+# Node / pnpm
+node_modules/
+dist/
+.astro/
+
+# Datos runtime (BD, dumps generados, logs) — nunca subir
+data/*.db
+data/*.db-*
+backend/data/*
+*.log
+
+# Volcado canónico MEGA y artefactos exportados (se regeneran con el pipeline)
+mega_cuenta_contenido_MEGAcmd.txt
+data/*
+!data/.gitkeep
+
+# Secretos
+.env
+.env.*
+!.env.example
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Playwright / e2e
+playwright-report/
+test-results/
+e2e/playwright-report/
+e2e/test-results/
+e2e/results/

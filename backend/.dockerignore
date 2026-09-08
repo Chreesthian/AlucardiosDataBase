@@ -1,0 +1,18 @@
+# python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# secretos / datos locales (se inyectan por env/volúmenes en runtime)
+.env
+.env.*
+!.env.example
+data/
+tests/
+
+# git / editor
+.git/
+.gitignore
+*.md

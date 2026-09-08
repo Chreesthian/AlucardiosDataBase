@@ -1,0 +1,170 @@
+# docker compose para AlucardiosDataBase (producción).
+# Copia `.env.example` → `.env` para personalizar puertos/credenciales.
+#
+#   docker compose build
+#   docker compose up -d          # web http://localhost:7330 · api http://localhost:7331
+#   docker compose logs -f backend
+name: alucard
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: alucard/backend:${ALUCARD_TAG:-latest}
+    init: true
+    restart: unless-stopped
+    # Las credenciales IGDB opcionales viven en backend/.env (gitignored).
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      ALUCARD_DB_PATH: /data/alucard.db
+      ALUCARD_DUMP_PATH: /dump/mega_cuenta_contenido_MEGAcmd.txt
+      ALUCARD_API_PORT: "7331"
+      ALUCARD_CORS_ORIGINS: "http://localhost:${FRONTEND_PORT:-7330},http://127.0.0.1:${FRONTEND_PORT:-7330}"
+    volumes:
+      - alucard-data:/data
+      - type: bind
+        source: ./mega_cuenta_contenido_MEGAcmd.txt
+        target: /dump/mega_cuenta_contenido_MEGAcmd.txt
+        read_only: true
+    ports:
+      - "${BACKEND_PORT:-7331}:7331"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7331/api/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 120s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  backend-enrich:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: alucard/backend:${ALUCARD_TAG:-latest}
+    init: true
+    restart: unless-stopped
+    # Worker supervisado de enriquecimiento IGDB (portadas + fichas completas).
+    # Reutiliza la misma imagen/BD que la API; cada pasada es idempotente y
+    # procesa automáticamente títulos nuevos o pendientes. Se reinicia solo si
+    # cae (docker compose restart backend-enrich para forzar una pasada ya).
+    entrypoint: ["python", "-m", "app.enrich"]
+    command: ["--db", "/data/alucard.db", "--daemon", "--sleep", "60"]
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      ALUCARD_DB_PATH: /data/alucard.db
+    volumes:
+      - alucard-data:/data
+    depends_on:
+      backend:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  backend-sync:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: alucard/backend:${ALUCARD_TAG:-latest}
+    init: true
+    restart: unless-stopped
+    # Watcher de sincronización incremental autónomo: cada 300 s comprueba el
+    # hash del volcado MEGA; si cambió, sincroniza la BD y re-exporta la
+    # biblioteca. Los títulos nuevos los enriquece backend-enrich solo.
+    entrypoint: ["python", "-m", "app.sync"]
+    command: ["--dump", "/dump/mega_cuenta_contenido_MEGAcmd.txt",
+              "--db", "/data/alucard.db", "--watch", "--interval", "300",
+              "--export"]
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      ALUCARD_DB_PATH: /data/alucard.db
+    volumes:
+      - alucard-data:/data
+      - type: bind
+        source: ./mega_cuenta_contenido_MEGAcmd.txt
+        target: /dump/mega_cuenta_contenido_MEGAcmd.txt
+        read_only: true
+    depends_on:
+      backend:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  backend-versiones:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: alucard/backend:${ALUCARD_TAG:-latest}
+    init: true
+    restart: unless-stopped
+    # Auditoría "1:1" local vs Nintendo (title-ids) AUTÓNOMA y blindada:
+    #  - Daemon reanudable (checkpoint /data/nintendo_ids.json).
+    #  - Primera pasada resuelve todo lo pendiente; después cada 60 min resuelve
+    #    SOLO los juegos nuevos que entren (el sync los añade solo).
+    #  - Se reinicia solo si cae (docker) y reintenta tras errores de red.
+    entrypoint: ["python", "-m", "app.versiones"]
+    command: ["--db", "/data/alucard.db",
+              "--cache", "/data/nintendo_ids.json",
+              "--out", "/data/version_audit.json",
+              "--oficiales", "/data/oficial.json",
+              "--resolver", "5374",
+              "--daemon", "--interval", "3600"]
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      ALUCARD_DB_PATH: /data/alucard.db
+    volumes:
+      - alucard-data:/data
+    depends_on:
+      backend:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # URL interna de la API horneada en el bundle SSR/cliente.
+        PUBLIC_BACKEND_HOST: http://backend
+        PUBLIC_BACKEND_PORT: "7331"
+    image: alucard/frontend:${ALUCARD_TAG:-latest}
+    init: true
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "7330"
+      # Puerto público del backend para el navegador (autosuggest/JS).
+      ALUCARD_PUBLIC_BACKEND_PORT: "${BACKEND_PORT:-7331}"
+    ports:
+      - "${FRONTEND_PORT:-7330}:7330"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:7330/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  alucard-data:
+    name: alucard-data

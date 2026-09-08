@@ -1,0 +1,15 @@
+# node / build
+node_modules/
+dist/
+.astro/
+*.log
+
+# secretos locales
+.env
+.env.*
+!.env.example
+
+# git / editor
+.git/
+.gitignore
+*.md

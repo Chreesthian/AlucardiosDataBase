@@ -1,0 +1,176 @@
+---
+import Base from "../layouts/Base.astro";
+import GameCard from "../components/GameCard.astro";
+import { api, type TitleSummary } from "../lib/api";
+import { formatBytes } from "../lib/format";
+
+const sp = new URLSearchParams(Astro.url.searchParams);
+const q = sp.get("q") ?? "";
+const letter = sp.get("letter") ?? "";
+const sort = sp.get("sort") ?? "name";
+const offset = Math.max(0, parseInt(sp.get("offset") ?? "0", 10) || 0);
+const limit = 60;
+
+let meta = null;
+let list = null;
+let error: string | null = null;
+try {
+  [meta, list] = await Promise.all([
+    api.meta(),
+    api.titles({ q: q || undefined, letter: letter || undefined, sort: sort as never, offset, limit }),
+  ]);
+} catch (e) {
+  error = e instanceof Error ? e.message : String(e);
+}
+
+function mkQuery(over: Record<string, string | number | null | undefined>): string {
+  const s = new URLSearchParams();
+  if (q && over.q === undefined) s.set("q", q);
+  if (letter && over.letter === undefined) s.set("letter", letter);
+  if (sort && over.sort === undefined) s.set("sort", sort);
+  for (const [k, v] of Object.entries(over)) {
+    if (v === undefined || v === null || v === "" || v === 0) s.delete(k);
+    else s.set(k, String(v));
+  }
+  return s.toString();
+}
+
+const chipIdle = "rounded-lg bg-zinc-900 px-2.5 py-1 text-xs font-medium text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200";
+const chipActive = "rounded-lg bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white";
+const chips = (meta?.buckets ?? []) as { letter: string; titles: number }[];
+const items: TitleSummary[] = list?.items ?? [];
+const total: number = list?.total ?? 0;
+const hasNext = offset + items.length < total;
+---
+
+<Base title="Biblioteca" description="Explora los juegos de tu cuenta MEGA en tiempo real.">
+  <section class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <h1 class="text-3xl font-semibold tracking-tight text-zinc-100">Biblioteca</h1>
+    </div>
+    <div class="flex flex-wrap gap-2 text-xs">
+      <span class="rounded-lg bg-zinc-900 px-3 py-1.5 text-zinc-300">
+        <b class="text-zinc-100">{meta?.titles ?? "–"}</b> juegos
+      </span>
+      <span class="rounded-lg bg-zinc-900 px-3 py-1.5 text-zinc-300">
+        <b class="text-zinc-100">{meta?.files ?? "–"}</b> archivos
+      </span>
+      <span class="rounded-lg bg-zinc-900 px-3 py-1.5 text-zinc-300">
+        <b class="text-zinc-100">{meta ? formatBytes(meta.bytes) : "–"}</b> MEGA
+      </span>
+      {meta?.covers ? (
+        <span class="rounded-lg bg-[#EAF4FF] px-3 py-1.5 text-[#1A6FB5]">
+          <b class="text-[#125F9E]">{meta.covers}</b> con portada
+        </span>
+      ) : null}
+    </div>
+  </section>
+
+  {error ? (
+    <section class="mt-10 rounded-2xl border border-red-200 bg-red-50 p-8 text-center">
+      <h2 class="text-lg font-semibold text-red-700">No se pudo conectar con la API</h2>
+      <p class="mx-auto mt-2 max-w-2xl text-sm text-red-500">{error}</p>
+      <pre class="mx-auto mt-4 max-w-xl overflow-x-auto rounded-lg border border-zinc-200 bg-zinc-50 p-4 text-left text-xs text-zinc-600">cd backend && uv sync
+uv run python -m app.ingest --dump ../mega_cuenta_contenido_MEGAcmd.txt
+uv run uvicorn app.main:app --port 7331</pre>
+    </section>
+  ) : (
+    <>
+      <form method="get" action="/" class="relative mt-6">
+        <input
+          type="text"
+          name="q"
+          id="search-input"
+          autocomplete="off"
+          value={q}
+          placeholder="Buscar juego en MEGA…  (ej. Zelda, Arcade, Final Fantasy)"
+          class="w-full rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 pl-11 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-blue-500"
+        />
+        <span class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500">⌕</span>
+        <input type="hidden" name="letter" value={letter} />
+        <input type="hidden" name="sort" value={sort} />
+        <div id="search-results" hidden class="absolute z-30 mt-1 w-full overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900 shadow-2xl"></div>
+      </form>
+      <nav class="mt-5 flex flex-wrap gap-1.5" aria-label="Letras">
+        <a
+          href={letter === "" ? undefined : `/?${mkQuery({ letter: "", offset: 0 })}`}
+          class={letter === "" ? chipActive : chipIdle}
+        >Todas</a>
+        {chips.map((b) => (
+          <a
+            href={`/?${mkQuery({ letter: b.letter, offset: 0 })}`}
+            title={`${b.titles} juegos`}
+            class={letter === b.letter ? chipActive : chipIdle}
+          >{b.letter}<span class="ml-0.5 text-[10px] opacity-50">{b.titles}</span></a>
+        ))}
+      </nav>
+
+      <div class="mt-4 flex items-center gap-3 text-xs text-zinc-500">
+        <span>Ordenar:</span>
+        {(
+          [
+            ["name", "Nombre"],
+            ["size", "Tamaño"],
+            ["files", "Archivos"],
+          ] as const
+        ).map(([val, label]) => (
+          <a
+            href={`/?${mkQuery({ sort: val, offset: 0 })}`}
+            class={sort === val ? "font-semibold text-blue-400" : "hover:text-zinc-300"}
+          >{label}</a>
+        ))}
+        <span class="ml-auto">{total} resultados{letter ? ` · letra ${letter}` : ""}</span>
+      </div>
+
+      <section class="mt-5 grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+        {items.map((g) => <GameCard game={g} />)}
+      </section>
+
+      {items.length === 0 && !error && (
+        <p class="mt-10 text-center text-sm text-zinc-500">Sin resultados para “{q || "esta letra"}”.</p>
+      )}
+
+      <div class="mt-10 flex items-center justify-center gap-3 text-sm">
+        {offset > 0 ? (
+          <a href={`/?${mkQuery({ offset: Math.max(0, offset - limit) })}`} class="rounded-lg border border-zinc-800 px-4 py-2 hover:border-zinc-600">← Anterior</a>
+        ) : <span />}
+        {hasNext ? (
+          <a href={`/?${mkQuery({ offset: offset + limit })}`} class="rounded-lg border border-zinc-800 px-4 py-2 hover:border-zinc-600">Siguiente →</a>
+        ) : <span />}
+      </div>
+      </>
+  )}
+</Base>
+
+<script is:inline>
+  const qel = document.getElementById("search-input");
+  const box = document.getElementById("search-results");
+  if (qel && box) {
+    const BACKEND = window.__ALUCARD_API || "http://localhost:7331";
+    let timer = 0;
+    const render = (items) => {
+      if (!items.length) { box.hidden = true; return; }
+      box.innerHTML = items.map((g) =>
+        `<a href="/game/${encodeURIComponent(g.slug)}/" class="flex items-center justify-between gap-3 px-4 py-2.5 hover:bg-zinc-800">
+          <span class="truncate text-sm text-zinc-100">${g.name.replace(/</g, "&lt;")}</span>
+          <span class="shrink-0 text-[10px] uppercase text-zinc-500">${g.letter}</span>
+        </a>`).join("");
+      box.hidden = false;
+    };
+    qel.addEventListener("input", () => {
+      clearTimeout(timer);
+      const v = qel.value.trim();
+      if (v.length < 2) { box.hidden = true; return; }
+      timer = window.setTimeout(async () => {
+        try {
+          const r = await fetch(`${BACKEND}/api/titles?q=${encodeURIComponent(v)}&limit=8`);
+          const d = await r.json();
+          render(d.items);
+        } catch { box.hidden = true; }
+      }, 180);
+    });
+    document.addEventListener("click", (e) => {
+      if (!(e.target).closest("#search-input, #search-results")) box.hidden = true;
+    });
+  }
+</script>

@@ -1,0 +1,18 @@
+{
+  "name": "alucard-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Auditoría end-to-end (API + navegador real con Playwright) de AlucardiosDataBase.",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:api": "playwright test audit-api",
+    "test:ui": "playwright test audit-ui",
+    "report": "playwright show-report",
+    "install:browsers": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.0"
+  }
+}

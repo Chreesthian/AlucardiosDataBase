@@ -1,0 +1,72 @@
+---
+import "../styles/global.css";
+import TopNav from "../components/TopNav.astro";
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+const { title = "Biblioteca", description = "" } = Astro.props;
+const pathname = Astro.url.pathname;
+const pageTitle = title === "Biblioteca" ? "Alucard — Biblioteca" : `${title} · Alucard`;
+
+// Puerto público del backend para el navegador (autosuggest, etc.). SSR usa la
+// URL interna horneada en el build; el cliente no puede resolver `backend`.
+// En runtime Docker lo inyecta compose (ALUCARD_PUBLIC_BACKEND_PORT).
+const publicBackendPort =
+  (globalThis as { process?: { env?: Record<string, string | undefined> } })
+    ?.process?.env?.ALUCARD_PUBLIC_BACKEND_PORT ?? "7331";
+---
+
+<!doctype html>
+<html lang="es" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>{pageTitle}</title>
+    <meta name="description" content={description || "Alucard — tu biblioteca de juegos en MEGA, al estilo scrob."} />
+    <link rel="icon" type="image/png" href="/brand/emblem.png" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- PWA: instalable en móvil/escritorio -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Alucardio" />
+    <link rel="apple-touch-icon" href="/brand/emblem.png" />
+    <meta name="theme-color" content="#f5f5f5" />
+    <script is:inline>
+      if (!document.documentElement.classList.contains("dark")) {
+        document.documentElement.classList.add("dark");
+      }
+    </script>
+    <script is:inline data-port={publicBackendPort}>
+      // URL pública de la API para llamadas desde el navegador.
+      (function () {
+        var el = document.currentScript;
+        var port = el && el.getAttribute("data-port") ? el.getAttribute("data-port") : "7331";
+        window.__ALUCARD_API = location.protocol + "//" + location.hostname + ":" + port;
+      })();
+    </script>
+    <script is:inline>
+      // Registro del Service Worker (PWA). Solo HTTP(S); en /api nunca se cachea.
+      if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) {
+        addEventListener("load", function () {
+          navigator.serviceWorker.register("/sw.js").catch(function (err) {
+            console.warn("Service Worker no registrado:", err);
+          });
+        });
+      }
+    </script>
+  </head>
+  <body class="min-h-screen bg-zinc-950 font-sans text-zinc-200 antialiased">
+    <TopNav pathname={pathname} />
+    <main class="mx-auto w-full max-w-7xl px-4 pb-24 pt-6 sm:px-6 lg:px-8">
+      <slot />
+    </main>
+    <footer class="border-t border-zinc-800/60 py-6 text-center text-xs text-zinc-500">
+      Hecho con <span aria-hidden="true">🧡</span> por{" "}
+      <strong class="font-semibold text-zinc-300">JdiCali</strong>
+    </footer>
+  </body>
+</html>

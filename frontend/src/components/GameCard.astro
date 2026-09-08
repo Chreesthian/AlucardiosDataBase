@@ -1,0 +1,61 @@
+---
+import type { TitleSummary } from "../lib/api";
+import { extList, formatBytes, initials } from "../lib/format";
+
+interface Props {
+  game: TitleSummary;
+}
+const { game } = Astro.props;
+
+const formats = extList(game.ext_json);
+const gradients = [
+  "from-blue-600/80 to-indigo-900/80",
+  "from-emerald-600/70 to-teal-900/80",
+  "from-violet-600/80 to-purple-950/90",
+  "from-rose-600/70 to-red-950/90",
+  "from-amber-500/70 to-orange-900/80",
+  "from-cyan-600/70 to-sky-950/90",
+  "from-fuchsia-600/70 to-pink-950/90",
+];
+const grad = gradients[(game.name.charCodeAt(0) || 0) % gradients.length];
+const extra =
+  `${game.base_count > 0 ? `Base ${game.base_count}` : ""}` +
+  `${game.update_count > 0 ? ` · ${game.update_count} upd` : ""}` +
+  `${game.dlc_count > 0 ? ` · ${game.dlc_count} DLC` : ""}`;
+---
+
+<a href={`/game/${game.slug}/`} class="group block" title={game.name}>
+  <div
+    class={`relative aspect-[2/3] w-full overflow-hidden rounded-xl bg-gradient-to-br ${grad} transition-transform duration-200 group-hover:scale-[1.02]`}
+  >
+    <div class="absolute inset-0 flex items-center justify-center">
+      <span class="text-4xl font-black tracking-tight text-white/80 drop-shadow">{initials(game.name)}</span>
+    </div>
+    {
+      game.igdb_cover && (
+        <img
+          src={game.igdb_cover}
+          alt={game.name}
+          loading="lazy"
+          decoding="async"
+          class="absolute inset-0 h-full w-full object-cover"
+          onerror="this.style.display='none'"
+        />
+      )
+    }
+    <span class="absolute left-2 top-2 z-10 rounded-md bg-black/40 px-1.5 py-0.5 text-[10px] font-bold text-white">
+      {game.letter}
+    </span>
+    <div class="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/70 to-transparent px-2.5 pb-2 pt-6">
+      <div class="flex flex-wrap items-center gap-1 text-[10px] font-semibold text-white/90">
+        {formats.slice(0, 2).map((f) => <span class="rounded bg-white/10 px-1 py-0.5">{f}</span>)}
+      </div>
+    </div>
+  </div>
+  <h3 class="clamp-2 mt-2 px-0.5 text-sm font-medium leading-snug text-zinc-100 group-hover:text-blue-400">
+    {game.name}
+  </h3>
+  <p class="mt-1 px-0.5 text-[11px] text-zinc-500">
+    {formatBytes(game.size_bytes)} · {game.file_count} archivos{extra && <span>{extra}</span>}
+  </p>
+</a>

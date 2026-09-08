@@ -1,0 +1,19 @@
+{
+  "name": "Alucardio — Biblioteca de juegos",
+  "short_name": "Alucardio",
+  "description": "Tu biblioteca de juegos Nintendo Switch en MEGA, con fichas IGDB completas.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f5f5f5",
+  "theme_color": "#3399ff",
+  "lang": "es",
+  "icons": [
+    { "src": "/brand/emblem.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
