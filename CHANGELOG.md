@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Issue and pull request templates.
 - Continuous integration workflows (tests, build, dependency and security scans).
 
+### Fixed
+
+- Backend export: the per-version file traversal is rebuilt over the snapshot's
+  `parent_id → nodes` map, so `app.sync --export` no longer aborts with a
+  `RecursionError` on titles that have version folders (every real library).
+
 ## [0.1.0] - 2026-07-09
 
 ### Added

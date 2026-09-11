@@ -46,13 +46,19 @@ def _parse(raw: str | None) -> dict[str, Any] | None:
 
 
 def _archivos_de(
-    hijos_por_id: dict[int, list[Node]], parent_id: int, prefijo: str
+    hijos: dict[int | None, list[Node]], parent_id: int, prefijo: str
 ) -> list[FileDict]:
-    """Recursivamente obtiene todos los archivos de una carpeta."""
+    """Recursivamente obtiene todos los archivos de una carpeta.
+
+    `hijos` es el mapa global ``parent_id -> [nodos]`` del snapshot; el recorrido
+    comienza en `parent_id` (la carpeta de una versión) y desciende por sus
+    subcarpetas. `prefijo` es la ruta de la carpeta del título, de modo que la
+    `ruta` de cada archivo queda relativa al propio juego.
+    """
     archivos: list[FileDict] = []
 
     def _recursivo(node_id: int, current_prefijo: str) -> None:
-        for n in hijos_por_id.get(node_id, []):
+        for n in hijos.get(node_id, []):
             if n.kind == "file":
                 # Asegurar que los campos no sean None
                 nombre: str = n.name or ""
@@ -93,26 +99,9 @@ def _build(title: Title, node: Node | None, hijos: dict[int | None, list[Node]])
     sueltos: list[FileDict] = []
 
     if node is not None:
-        # Crear diccionario de nodos por ID para acceso rápido
-        hijos_por_id: dict[int, list[Node]] = defaultdict(list)
-        for n in hijos.get(node.id, []):
-            if n.kind == "folder":
-                hijos_por_id[n.id].append(n)
-            elif n.kind == "file":
-                # Asegurar que los campos no sean None
-                nombre: str = n.name or ""
-                tamanio: int = n.size or 0
-                ext: str = n.ext or ""
-
-                sueltos.append(
-                    {
-                        "nombre": nombre,
-                        "tamano": tamanio,
-                        "ext": ext,
-                    }
-                )
-
-        # Procesar versiones (carpetas)
+        # Hijos directos del título: las carpetas son versiones (B-ASE/U-PD/D-LC)
+        # y los archivos sueltos van a `sueltos`. El `contenido` de cada versión
+        # se resuelve descendiendo por el mapa global de hijos.
         for n in hijos.get(node.id, []):
             if n.kind == "folder":
                 # Asegurar que los campos no sean None
@@ -128,7 +117,16 @@ def _build(title: Title, node: Node | None, hijos: dict[int | None, list[Node]])
                         "tamano": tamano_ver,
                         "archivos": archivos_ver,
                         "carpetas": carpetas_ver,
-                        "contenido": _archivos_de(hijos_por_id, n.id, node.path or ""),
+                        "contenido": _archivos_de(hijos, n.id, node.path or ""),
+                    }
+                )
+            elif n.kind == "file":
+                # Asegurar que los campos no sean None
+                sueltos.append(
+                    {
+                        "nombre": n.name or "",
+                        "tamano": n.size or 0,
+                        "ext": n.ext or "",
                     }
                 )
 
