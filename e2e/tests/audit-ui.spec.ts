@@ -103,7 +103,7 @@ test("detalle de un juego con versiones y archivos", async ({ page }) => {
   ).toContainText("The Legend of Zelda Echoes of Wisdom");
 
   await expect(page.getByRole("heading", { name: "Versiones" })).toBeVisible();
-  await expect(page.getByText("Base", { exact: true })).toBeVisible();
+  await expect(page.getByText("VERSIÓN BASE", { exact: true })).toBeVisible();
 
   // Algún archivo real (Zelda está empaquetado en .rar) listado con tamaño.
   const fileRow = page.locator("li", { hasText: /\.rar/ }).first();

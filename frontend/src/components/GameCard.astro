@@ -26,7 +26,7 @@ const extra =
 
 <a href={`/game/${game.slug}/`} class="group block" title={game.name}>
   <div
-    class={`relative aspect-[2/3] w-full overflow-hidden rounded-xl bg-gradient-to-br ${grad} transition-transform duration-200 group-hover:scale-[1.02]`}
+    class={`relative aspect-2/3 w-full overflow-hidden rounded-xl bg-linear-to-br ${grad} transition-transform duration-200 group-hover:scale-[1.02]`}
   >
     <div class="absolute inset-0 flex items-center justify-center">
       <span class="text-4xl font-black tracking-tight text-white/80 drop-shadow">{initials(game.name)}</span>
@@ -46,7 +46,7 @@ const extra =
     <span class="absolute left-2 top-2 z-10 rounded-md bg-black/40 px-1.5 py-0.5 text-[10px] font-bold text-white">
       {game.letter}
     </span>
-    <div class="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/70 to-transparent px-2.5 pb-2 pt-6">
+    <div class="absolute inset-x-0 bottom-0 z-10 bg-linear-to-t from-black/70 to-transparent px-2.5 pb-2 pt-6">
       <div class="flex flex-wrap items-center gap-1 text-[10px] font-semibold text-white/90">
         {formats.slice(0, 2).map((f) => <span class="rounded bg-white/10 px-1 py-0.5">{f}</span>)}
       </div>
