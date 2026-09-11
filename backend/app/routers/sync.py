@@ -67,7 +67,7 @@ def sync_from_dump(request: Request, body: DumpRequest | None = None) -> SyncRun
     except FileNotFoundError:
         raise HTTPException(404, f"Volcado no encontrado: {dump}") from None
     try:
-        resumen = refresh(request.app.state.engine, parsed, kind="dump", source_path=dump)
+        resumen = refresh(request.app.state.engine, parsed, kind="dump", source_path=str(dump))
     except RuntimeError as exc:  # guard anti-vaciado del sync
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return SyncRunOut(ok=True, snapshot=None, resumen=resumen)

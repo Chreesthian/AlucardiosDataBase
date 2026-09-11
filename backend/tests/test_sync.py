@@ -180,3 +180,33 @@ def test_router_sync_dump_vacio_devuelve_400_y_no_toca_bd(tmp_path):
 
     with Session(app.state.engine) as s:
         assert s.execute(select(Title)).scalars().all()  # BD intacta
+
+
+def test_router_sync_dump_camino_feliz_persiste_source_path(tmp_path):
+    """POST /api/sync/dump (camino feliz) aplica el diff y guarda la ruta.
+
+    Regresión: el router pasaba un `Path` a `refresh(source_path=…)`; SQLite no
+    puede enlazar ese tipo y cada llamada terminaba en 500.
+    """
+    from fastapi.testclient import TestClient
+
+    from app.models import Snapshot
+
+    app = build_app(tmp_path, SAMPLE_DUMP)
+    nuevo = tmp_path / "dump.txt"
+    nuevo.write_text(_cambiar(SAMPLE_DUMP), encoding="utf-8")
+
+    with TestClient(app) as c:
+        r = c.post("/api/sync/dump", json={"path": str(nuevo)})
+
+    assert r.status_code == 200, r.text
+    resumen = r.json()["resumen"]
+    assert resumen["bootstrap"] is False
+    assert resumen["added_files"] == 1  # zoo.part1.rar
+    assert resumen["removed_files"] == 1  # game1.dlc1…
+    assert resumen["source_path"] == str(nuevo)
+
+    with Session(app.state.engine) as s:
+        snap = s.execute(select(Snapshot).order_by(Snapshot.id.desc())).scalars().first()
+        assert isinstance(snap.source_path, str)
+        assert snap.source_path == str(nuevo)

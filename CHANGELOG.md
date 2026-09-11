@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Backend export: the per-version file traversal is rebuilt over the snapshot's
   `parent_id → nodes` map, so `app.sync --export` no longer aborts with a
   `RecursionError` on titles that have version folders (every real library).
+- `POST /api/sync/dump`: the dump path is persisted as text instead of a `Path`
+  (SQLite cannot bind that type), which made every call return HTTP 500.
 
 ## [0.1.0] - 2026-07-09
 
