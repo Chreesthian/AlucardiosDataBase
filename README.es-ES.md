@@ -110,6 +110,58 @@ y se ingiere en el primer arranque únicamente si la base de datos está vacía.
 Los datos SQLite viven en el volumen `alucard-data`. Comandos útiles:
 `make logs`, `make ps`, `make down`, `make restart`.
 
+### Mantener la biblioteca al día (refresco del volcado + `backend-sync`)
+
+`backend-sync` solo *aplica* diferencias: el volcado canónico lo genera una
+sesión MEGAcmd viva en el host (`scripts/refrescar_volcado.py`), así que nada
+dentro de los contenedores puede regenerarlo. Ese refresco se automatiza en el
+host:
+
+```bash
+make volcado-auto      # refresca el volcado YA y aplica el escaneo incremental
+make volcado-cron      # instala la entrada de cron (cada 6 h, idempotente)
+make volcado-estado    # último resultado + cola del log + entrada de cron
+make volcado-cron-off  # retira la entrada de cron
+```
+
+El pipeline es **de fallo rápido y ruidoso** a propósito: `scripts/autovolcado.sh`
+sale con código != 0 si no hay sesión MEGA o si falla el refresco/escaneo (cron
+avisa por correo y todo queda en `data/volcado.log`), y `backend-sync` sale con
+código 3 cuando el volcado supera `ALUCARD_SYNC_MAX_EDAD_HORAS` (26 h) en vez de
+repetir "sin cambios" para siempre. `GET /api/sync/status` expone
+`dump_obsoleto`/`dump_age_hours` y la página `/novedades` muestra un aviso, para
+que una biblioteca congelada se VEA en lugar de pasar desapercibida.
+
+### Rotación semanal de credenciales (otra cuenta, misma biblioteca)
+
+Las credenciales de MEGA rotan cada semana (cuentas distintas que montan el
+**mismo share**). El pipeline está anclado al share, no a la cuenta:
+
+```bash
+make credenciales     # guarda MEGA_EMAIL/MEGA_PASSWORD de la semana (chmod 600)
+# → ~/.config/alucard/mega.env  (o ALUCARD_MEGA_ENV, o MEGA_EMAIL en el entorno)
+```
+
+- Si la sesión activa es de otra cuenta, `scripts/lib/mega_session.sh` se
+  re-loguea solo (login primero; si falla **restaura** la sesión previa y sale
+  rc=4, así el host nunca se queda sin MEGAcmd).
+- `refrescar_volcado.py` aborta (rc=1, sin escribir nada) si el candidato pierde
+  un sector que hoy trae archivos: unas credenciales sin acceso a la biblioteca
+  no pueden vaciar el catálogo. `--permitir-sectores-perdidos` lo permite a
+  propósito.
+- `app.sync` hace diff por rutas y la etiqueta de sector sale del share
+  (`INSHARE <dueño>:<carpeta>`), así que rotar la cuenta sin cambios reales da 0
+  altas/bajas: ni "Novedades" fantasma ni re-enriquecido IGDB. `GET
+  /api/sync/status` informa del `dump_fuente` estable junto a la `account`
+  rotativa, y `/novedades` lo muestra.
+- **Renombrado del share (p. ej. `BCKP1` → `BCKP2`)**: cuando desaparece un share
+  y aparece otro con contenido equivalente, `app.sync` detecta la rotación,
+  remapea las rutas guardadas y reinicia los enlaces de descarga cacheados
+  (`pendiente`) en vez de borrar y reconstruir el catálogo: sobreviven los
+  `node_id`, los títulos y el IGDB, y "Novedades" solo lista lo realmente nuevo.
+  Vuelve a indexar los enlaces contra el share nuevo con
+  `./scripts/enlazar_descargas.sh` (host, reanudable).
+
 ## Configuración
 
 El backend lee variables `ALUCARD_*` (ver `backend/.env.example`); el build del
@@ -123,14 +175,17 @@ frontend hornea `PUBLIC_BACKEND_HOST`/`PUBLIC_BACKEND_PORT` (ver
 | `ALUCARD_API_PORT`                   | Puerto del backend                           |
 | `ALUCARD_CORS_ORIGINS`               | Orígenes del frontend permitidos             |
 | `ALUCARD_IGDB_CLIENT_ID` / `..._SECRET` | Credenciales IGDB (también `IGDB_*`)    |
+| `ALUCARD_SYNC_MAX_EDAD_HORAS`        | Edad máxima del volcado antes de que el vigía falle (def. 26) |
+| `ALUCARD_SYNC_MIN_FRACCION`          | Fracción mínima de archivos que debe conservar el volcado (def. 0.5) |
 | `PUBLIC_BACKEND_HOST` / `..._PORT`   | URL del backend horneada en el build web     |
 | `BACKEND_PORT` / `FRONTEND_PORT`     | Puertos publicados en el host (Compose)      |
 
 ## Operaciones
 
 El `Makefile` agrupa los flujos principales: `make enrich`, `make sync`,
-`make export`, `make catalog`, `make versiones`, `make versiones-daemon`,
-`make test`, `make lint` y `make e2e`.
+`make export`, `make catalog`, `make volcado`, `make volcado-auto`,
+`make volcado-cron`, `make sync-status`, `make versiones`,
+`make versiones-daemon`, `make test`, `make lint` y `make e2e`.
 
 ## Documentación
 

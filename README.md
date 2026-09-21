@@ -107,6 +107,57 @@ ingested on first boot only when the database is empty. SQLite data lives in
 the `alucard-data` volume. Useful commands: `make logs`, `make ps`, `make
 down`, `make restart`.
 
+### Keeping the library up to date (dump refresh + `backend-sync`)
+
+`backend-sync` can only *apply* diffs: the canonical dump is generated from a
+live MEGAcmd session on the host (`scripts/refrescar_volcado.py`), so nothing
+inside the containers can regenerate it. That refresh is automated on the host:
+
+```bash
+make volcado-auto      # refresh the dump now and apply the incremental scan
+make volcado-cron      # install the cron entry (every 6 h, idempotent)
+make volcado-estado    # last run + log tail + cron entry
+make volcado-cron-off  # remove the cron entry
+```
+
+The pipeline is deliberately **fail fast and loud**: `scripts/autovolcado.sh`
+exits non-zero when there is no MEGA session or when the refresh/scan fails
+(cron then mails the reason and everything is logged to `data/volcado.log`), and
+`backend-sync` exits with code 3 when the dump is older than
+`ALUCARD_SYNC_MAX_EDAD_HORAS` (26 h) instead of repeating "no changes" forever.
+`GET /api/sync/status` exposes `dump_obsoleto`/`dump_age_hours` and the
+`/novedades` page renders a warning banner, so a frozen catalog is visible
+instead of silent.
+
+### Weekly credential rotation (different account, same library)
+
+The MEGA credentials rotate weekly (different accounts that mount the **same
+in-share**). The pipeline is anchored to the share, not to the account:
+
+```bash
+make credenciales     # stores this week's MEGA_EMAIL/MEGA_PASSWORD (chmod 600)
+# → ~/.config/alucard/mega.env  (or ALUCARD_MEGA_ENV, or MEGA_EMAIL in the env)
+```
+
+- If the active session belongs to another account, `scripts/lib/mega_session.sh`
+  logs in again on its own (login first; if it fails it **restores** the previous
+  session and exits rc=4, so the host is never left without MEGAcmd).
+- `refrescar_volcado.py` aborts (rc=1, nothing written) if the candidate dump
+  loses a sector that currently carries files — credentials that cannot reach the
+  library can never empty the catalog. `--permitir-sectores-perdidos` overrides
+  it for an intentional change.
+- `app.sync` diffs by path and the sector label comes from the share
+  (`INSHARE <owner>:<folder>`), so rotating the account without real changes
+  yields 0 additions/removals: no phantom "Novedades" and no IGDB re-enrichment.
+  `GET /api/sync/status` reports the stable `dump_fuente` next to the rotating
+  `account`, and `/novedades` shows it.
+- **Share renaming (e.g. `BCKP1` → `BCKP2`)**: when a share disappears and a new
+  one appears with equivalent content, `app.sync` detects the rotation, remaps the
+  stored paths and resets the cached download links (`pendiente`) instead of
+  deleting/rebuilding the catalog, so `node_id`s, titles and IGDB survive while
+  only the real new files show up in "Novedades". Re-index the links against the
+  new share with `./scripts/enlazar_descargas.sh` (host, resumable).
+
 ## Configuration
 
 The backend reads `ALUCARD_*` variables (see `backend/.env.example`); the
@@ -120,14 +171,17 @@ frontend build embeds `PUBLIC_BACKEND_HOST`/`PUBLIC_BACKEND_PORT` (see
 | `ALUCARD_API_PORT`                   | Backend port                              |
 | `ALUCARD_CORS_ORIGINS`               | Allowed frontend origins                  |
 | `ALUCARD_IGDB_CLIENT_ID` / `..._SECRET` | IGDB credentials (also `IGDB_*`)    |
+| `ALUCARD_SYNC_MAX_EDAD_HORAS`        | Max dump age before the sync watcher fails (def. 26) |
+| `ALUCARD_SYNC_MIN_FRACCION`          | Min file ratio kept by a dump to be applied (def. 0.5) |
 | `PUBLIC_BACKEND_HOST` / `..._PORT`   | Backend URL baked into the web build      |
 | `BACKEND_PORT` / `FRONTEND_PORT`     | Published host ports (Compose)            |
 
 ## Operations
 
 The `Makefile` provides the main workflows: `make enrich`, `make sync`,
-`make export`, `make catalog`, `make versiones`, `make versiones-daemon`,
-`make test`, `make lint` and `make e2e`.
+`make export`, `make catalog`, `make volcado`, `make volcado-auto`,
+`make volcado-cron`, `make sync-status`, `make versiones`,
+`make versiones-daemon`, `make test`, `make lint` and `make e2e`.
 
 ## Documentation
 

@@ -16,6 +16,7 @@ Docker Compose deployment of supervised workers.
   - `parser.py`, `ingest.py`, `library.py`, `catalog.py`: dump and catalog.
   - `igdb.py`, `enrich.py`: IGDB connector and enrichment pipeline.
   - `sync.py`: incremental synchronization.
+  - `novedades.py`: new-games/new-content events (sección "Novedades").
   - `versiones.py`: Nintendo title-id audit.
   - `indexar_descargas.py`, `megacmd.py`: MEGA download index.
   - `routers/`: FastAPI routes.
@@ -36,6 +37,20 @@ Docker Compose deployment of supervised workers.
   supervised workers instead.
 - Keep the incremental sync destructive guard: a dump with zero files must
   never wipe the catalog unless `--allow-vacio` is passed explicitly.
+- Keep the freshness guard loud: if the canonical dump is older than
+  `ALUCARD_SYNC_MAX_EDAD_HORAS`, `app.sync --watch` must exit with rc=3 (Docker
+  restarts it and `docker compose ps` shows the failure). Never silence it to
+  make logs prettier: the dump refresh is automated by
+  `scripts/autovolcado.sh` (`make volcado-cron`) and a stale dump means the
+  database, the catalog and "Novedades" are frozen.
+- The canonical dump is generated on the host (MEGAcmd session in `~/.megaCmd`)
+  by `scripts/refrescar_volcado.py`; containers cannot regenerate it, so do not
+  try to run MEGAcmd inside a worker image.
+- MEGA credentials rotate weekly (different accounts, same in-share). Never
+  hardcode an account: the pipeline identity is the share label
+  (`INSHARE <owner>:<folder>`), credentials come from `scripts/lib/mega_session.sh`
+  (`make credenciales`), and a rotation that reaches less data must abort loudly
+  (`refrescar_volcado.py` sector guard) instead of emptying the catalog.
 - Write atomic JSON (see `backend/app/safefs.py`) for exported artifacts.
 - Use the shared SQLite engine (`build_engine` in `backend/app/db.py`) with
   WAL and busy timeout; do not create raw engines.
