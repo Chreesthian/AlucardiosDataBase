@@ -49,6 +49,16 @@ class Settings(BaseSettings):
     mega_export_bin: str = "mega-export"
     mega_timeout_s: int = 180
 
+    # ── Frescura del volcado (pipeline de actualización) ────
+    # Edad máxima (horas) que puede tener el volcado canónico antes de que el
+    # vigía `app.sync --watch` lo considere OBSOLETO y falle a propósito: si la
+    # automatización del refresco (scripts/autovolcado.sh, cron cada 6 h) se
+    # rompe, la BD se queda congelada sin avisar. 0 desactiva el guard.
+    sync_max_edad_horas: int = 26
+    # Fracción mínima de archivos que debe conservar un volcado para aplicarse
+    # (protege de escrituras a medias y de bajadas masivas no intencionadas).
+    sync_min_fraccion: float = 0.5
+
     # ── IGDB / GamesDb (metadatos, fase F4) ────────────────
     # Credenciales IGDB (Twitch) con los mismos nombres que el proyecto anterior
     # (IGDB_CLIENT_ID / IGDB_CLIENT_SECRET en .env) o con prefijo ALUCARD_.

@@ -35,20 +35,23 @@ export interface MetaOut {
   buckets: BucketOut[];
 }
 
-export interface TitleSummary {
+export interface CardGame {
   slug: string;
   name: string;
   letter: string;
   size_bytes: number;
   file_count: number;
-  folder_count: number;
   base_count: number;
   update_count: number;
   dlc_count: number;
-  other_count: number;
   ext_json: string | null;
-  igdb_slug: string | null;
   igdb_cover: string | null;
+}
+
+export interface TitleSummary extends CardGame {
+  folder_count: number;
+  other_count: number;
+  igdb_slug: string | null;
 }
 
 export interface TitleListOut {
@@ -96,6 +99,56 @@ export interface TitleDetailOut {
   remaining_files: FileOut[];
 }
 
+export interface SyncStatusOut {
+  last_snapshot: SnapshotOut | null;
+  configured_dump: string;
+  dump_exists: boolean;
+  /** Fecha de la cabecera del volcado (cuándo se refrescó de verdad). */
+  dump_generated_at: string | null;
+  /** Share que aporta la biblioteca (estable aunque la cuenta rote). */
+  dump_fuente: string | null;
+  /** Horas transcurridas desde el último refresco del volcado. */
+  dump_age_hours: number | null;
+  dump_max_edad_horas: number;
+  /** `true` cuando el pipeline de actualización está parado. */
+  dump_obsoleto: boolean;
+  megacmd_available: boolean;
+  megacmd_binary: string | null;
+  megacmd_error: string | null;
+  ultimo_escaneo: Record<string, unknown> | null;
+}
+
+export type TipoNovedad = "juego_nuevo" | "update_nuevo" | "dlc_nuevo" | "contenido_nuevo";
+
+export interface NovedadOut {
+  id: number;
+  tipo: TipoNovedad;
+  slug: string;
+  name: string;
+  letter: string;
+  version: string | null;
+  archivos: number;
+  bytes_nuevos: number;
+  detalle: string[];
+  igdb_cover: string | null;
+  detectada_en: string;
+  vigente: boolean;
+  titulo?: TitleSummary | null;
+}
+
+export interface NovedadesOut {
+  items: NovedadOut[];
+  total: number;
+  offset: number;
+  limit: number;
+  resumen: {
+    total: number;
+    por_tipo: Record<TipoNovedad, number>;
+    juegos_nuevos: number;
+    actualizaciones: number;
+  };
+}
+
 async function getJSON<T>(path: string): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { Accept: "application/json" },
@@ -122,8 +175,15 @@ export interface TitlesParams {
   limit?: number;
 }
 
+export interface NovedadesParams {
+  tipo?: string;
+  offset?: number;
+  limit?: number;
+}
+
 export const api = {
   meta: () => getJSON<MetaOut>("/api/meta"),
+  syncStatus: () => getJSON<SyncStatusOut>("/api/sync/status"),
   titles: (params: TitlesParams = {}) => {
     const sp = new URLSearchParams();
     if (params.q) sp.set("q", params.q);
@@ -135,4 +195,11 @@ export const api = {
   },
   title: (slug: string) =>
     getJSON<TitleDetailOut>(`/api/titles/${encodeURIComponent(slug)}`),
+  novedades: (params: NovedadesParams = {}) => {
+    const sp = new URLSearchParams();
+    if (params.tipo) sp.set("tipo", params.tipo);
+    if (params.offset !== undefined) sp.set("offset", String(params.offset));
+    if (params.limit !== undefined) sp.set("limit", String(params.limit));
+    return getJSON<NovedadesOut>(`/api/novedades?${sp.toString()}`);
+  },
 };

@@ -1,9 +1,10 @@
 /**
  * Auditoría INTERNA: la API REST y la coherencia de la base de datos ingerida.
- * Valores esperados = snapshot real del volcado MEGA (30.771 archivos / 5.374 títulos).
+ * Los totales esperados viven en `helpers.VOLCADO` (volcado canónico vigente).
  */
 import { expect, test } from "@playwright/test";
-import { apiGet } from "./helpers";
+
+import { VOLCADO, apiGet } from "./helpers";
 
 test.describe("API · salud y despliegue", () => {
   test("GET /api/health responde ok y con snapshots", async () => {
@@ -21,6 +22,12 @@ test.describe("API · salud y despliegue", () => {
     expect(body.last_snapshot).not.toBeNull();
     expect(body.dump_exists).toBe(true);
     expect(typeof body.megacmd_available).toBe("boolean");
+    // Frescura de la fuente: si el refresco automático se para, la API lo dice
+    // (y la sección "Novedades" avisa en pantalla) en vez de fingir estar al día.
+    expect(typeof body.dump_obsoleto).toBe("boolean");
+    expect(body.dump_max_edad_horas).toBeGreaterThan(0);
+    expect(typeof body.dump_age_hours).toBe("number");
+    expect(body.dump_age_hours).toBeLessThan(body.dump_max_edad_horas);
   });
 });
 
@@ -32,10 +39,10 @@ test.describe("API · coherencia de la ingesta", () => {
     expect(snap).not.toBeNull();
     expect(snap.source_kind).toBe("dump");
     expect(snap.account).toContain("@");
-    expect(body.files).toBe(30771);
-    expect(body.folders).toBe(15629);
-    expect(body.titles).toBe(5374);
-    expect(body.bytes).toBe(17555391856377);
+    expect(body.files).toBe(VOLCADO.files);
+    expect(body.folders).toBe(VOLCADO.folders);
+    expect(body.titles).toBe(VOLCADO.titles);
+    expect(body.bytes).toBe(VOLCADO.bytes);
     expect(body.buckets.length).toBe(27);
 
     // Coherencia interna: la suma de títulos por bucket == total.
@@ -55,7 +62,7 @@ test.describe("API · coherencia de la ingesta", () => {
 
   test("pagina listado de títulos (60 por defecto)", async () => {
     const { body } = await apiGet("/api/titles?limit=60");
-    expect(body.total).toBe(5374);
+    expect(body.total).toBe(VOLCADO.titles);
     expect(body.items.length).toBe(60);
     expect(body.limit).toBe(60);
     const first = body.items[0];
@@ -63,9 +70,9 @@ test.describe("API · coherencia de la ingesta", () => {
     expect(typeof first.size_bytes).toBe("number");
   });
 
-  test("filtro por letra A → 655 títulos", async () => {
+  test("filtro por letra A → títulos del bucket A", async () => {
     const { body } = await apiGet("/api/titles?letter=A&limit=1");
-    expect(body.total).toBe(655);
+    expect(body.total).toBe(VOLCADO.letraA);
     expect(body.items[0].letter).toBe("A");
   });
 
@@ -103,7 +110,7 @@ test.describe("API · detalle de título", () => {
     // Escanea el listado (ext_json) hasta dar con un título con formato NSP.
     const step = 500;
     let slug: string | null = null;
-    for (let offset = 0; offset < 5374 && !slug; offset += step) {
+    for (let offset = 0; offset < VOLCADO.titles && !slug; offset += step) {
       const { body } = await apiGet(`/api/titles?limit=${step}&offset=${offset}`);
       for (const item of body.items) {
         const exts = JSON.parse(item.ext_json || "{}") as Record<string, number>;

@@ -4,6 +4,19 @@ import { mkdirSync } from "node:fs";
 export const API_BASE = process.env.API_BASE ?? "http://127.0.0.1:7441";
 export const BASE_URL = process.env.BASE_URL ?? "http://127.0.0.1:7440";
 
+/**
+ * Totales del volcado canónico vigente (`mega_cuenta_contenido_MEGAcmd.txt`).
+ * Una sola fuente de verdad para la auditoría: al refrescar el volcado
+ * (`make volcado`) basta actualizar este objeto.
+ */
+export const VOLCADO = {
+  files: 31263,
+  folders: 15869,
+  titles: 5448,
+  bytes: 17639024105947,
+  letraA: 663,
+};
+
 /** GET a la API (desde Node) con control de error. */
 export async function apiGet(path: string): Promise<any> {
   const res = await fetch(`${API_BASE}${path}`, {

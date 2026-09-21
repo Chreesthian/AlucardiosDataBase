@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.enrich import run as enrich_run
 from app.library import current_snapshot
-from app.models import Node, SyncLog, Title
+from app.models import Node, Snapshot, SyncLog, Title
 from app.sync import refresh_text
 
 from .conftest import build_app
@@ -84,7 +84,6 @@ def test_sync_incremental_suma_y_resta_sin_reconstruir(tmp_path):
     with Session(engine) as session:
         snap = current_snapshot(session)
         sid = snap.id
-        from app.models import Snapshot
 
         assert session.get(Snapshot, sid).file_count == 6  # -1 (dlc) +1 (zoo)
 
@@ -133,6 +132,42 @@ def test_sync_idempotente_sin_cambios(tmp_path):
     assert stats["removed_files"] == 0
     assert stats["changed_files"] == 0
     assert stats["removed_folders"] == 0
+
+
+def test_sync_refresca_cabecera_del_snapshot(tmp_path):
+    """El diff incremental actualiza la cabecera del volcado vigente.
+
+    Regresión: `refresh` sobrescribía totales y hash pero conservaba la fecha de
+    volcado (y cuenta/herramienta) de la primera ingesta, así que la API servía
+    una cabecera obsoleta tras cada refresco del volcado.
+    """
+    app = build_app(tmp_path, SAMPLE_DUMP)
+    engine = app.state.engine
+    with Session(engine) as s:
+        snap_id = current_snapshot(s).id
+
+    texto = (
+        SAMPLE_DUMP.replace(
+            "Cuenta            : test@example.com", "Cuenta            : otra@example.com"
+        )
+        .replace(
+            "Fecha de volcado  : 2026-09-07T00:00:00",
+            "Fecha de volcado  : 2026-10-01T12:30:00",
+        )
+        .replace(
+            "Herramienta       : MEGAcmd 2.6.0 (mega-ls -R -l)",
+            "Herramienta       : MEGAcmd 2.7.1",
+        )
+    )
+    stats = refresh_text(engine, texto)
+    assert stats["added_files"] == 0
+    assert stats["removed_files"] == 0
+
+    with Session(engine) as s:
+        snap = s.get(Snapshot, snap_id)
+        assert snap.account == "otra@example.com"
+        assert snap.generated_at == "2026-10-01T12:30:00"
+        assert snap.tool == "MEGAcmd 2.7.1"
 
 
 def test_sync_volcado_vacio_no_borra(tmp_path):

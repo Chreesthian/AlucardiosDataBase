@@ -3,7 +3,7 @@
  * Cubre SSR, navegación, buscador autosuggest, chips de letra, orden y detalle.
  */
 import { expect, test, type Page } from "@playwright/test";
-import { apiGet, ensureResultsDir } from "./helpers";
+import { apiGet, ensureResultsDir, VOLCADO } from "./helpers";
 
 /** Colecciona errores de consola/página para fallar si aparecen. */
 function watchErrors(page: Page): string[] {
@@ -86,7 +86,7 @@ test("paginación SSR: siguiente/anterior mantienen offset coherente", async ({ 
   await page.goto("/");
   await page.getByRole("link", { name: /Siguiente/ }).click();
   await page.waitForURL(/offset=60/);
-  await expect(page.getByText("5374 resultados")).toBeVisible();
+  await expect(page.getByText(`${VOLCADO.titles} resultados`)).toBeVisible();
   const secondPageFirst = (await page.locator(CARDS).first().innerText()).trim();
   expect(secondPageFirst.length).toBeGreaterThan(0);
 

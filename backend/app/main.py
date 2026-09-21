@@ -16,7 +16,7 @@ from . import __version__
 from .config import Settings
 from .config import settings as default_settings
 from .db import build_engine, create_schema
-from .routers import catalog, download, enrich, health, library, sync
+from .routers import catalog, download, enrich, health, library, novedades, sync
 
 
 def create_app(settings_: Settings | None = None) -> FastAPI:
@@ -61,6 +61,7 @@ def create_app(settings_: Settings | None = None) -> FastAPI:
     app.include_router(enrich.router)
     app.include_router(catalog.router)
     app.include_router(download.router)
+    app.include_router(novedades.router)
 
     @app.get("/")
     def root() -> dict:

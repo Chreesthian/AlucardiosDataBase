@@ -25,6 +25,9 @@ const link = (active: boolean) =>
       <a href="/" class={link(pathname === "/" || pathname.startsWith("/game/"))}>
         Biblioteca
       </a>
+      <a href="/novedades/" class={link(pathname.startsWith("/novedades"))}>
+        Novedades
+      </a>
     </div>
   </nav>
 </header>

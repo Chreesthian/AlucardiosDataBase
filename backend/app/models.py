@@ -153,3 +153,40 @@ class Title(Base):
     igdb_slug: Mapped[str | None] = mapped_column(String(255))
     igdb_cover: Mapped[str | None] = mapped_column(Text)
     igdb_json: Mapped[str | None] = mapped_column(Text)
+
+
+class Novedad(Base):
+    """Evento de la sección "Novedades" (historial append-only).
+
+    Se registra en cada escaneo incremental (`app.sync`) a partir del diff de
+    rutas: un título nuevo produce un evento `juego_nuevo`; los archivos nuevos
+    dentro de un título ya existente producen `update_nuevo`, `dlc_nuevo` o
+    `contenido_nuevo` según la carpeta de versión (`U-PD…`, `D-LC…`, …).
+
+    Los eventos se conservan aunque el título desaparezca de la biblioteca
+    (por eso se duplican `slug`/`name`/`letter` y no hay FK a `titles`).
+    """
+
+    __tablename__ = "novedades"
+    __table_args__ = (
+        Index("ix_novedades_detectada", "detectada_en"),
+        Index("ix_novedades_tipo", "tipo"),
+        Index("ix_novedades_slug", "slug"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("snapshots.id", ondelete="CASCADE"), index=True
+    )
+    slug: Mapped[str] = mapped_column(String(255))
+    name: Mapped[str] = mapped_column(Text)
+    letter: Mapped[str] = mapped_column(String(2), default="#")
+    tipo: Mapped[str] = mapped_column(
+        String(24)
+    )  # juego_nuevo|update_nuevo|dlc_nuevo|contenido_nuevo
+    version: Mapped[str | None] = mapped_column(Text)  # carpeta de versión (p. ej. "U-PD 1.3.0")
+    archivos: Mapped[int] = mapped_column(Integer, default=0)  # archivos nuevos del evento
+    bytes_nuevos: Mapped[int] = mapped_column(BigInteger, default=0)
+    detalle_json: Mapped[str | None] = mapped_column(Text)  # rutas nuevas (relativas al título)
+    igdb_cover: Mapped[str | None] = mapped_column(Text)  # carátula en el momento del evento
+    detectada_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

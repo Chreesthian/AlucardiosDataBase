@@ -105,11 +105,42 @@ class TitleDetailOut(BaseModel):
     remaining_files: list[FileOut]  # archivos directos del título (sin versión)
 
 
+# ── novedades ────────────────────────────────────────────────
+class NovedadOut(BaseModel):
+    id: int
+    tipo: str  # juego_nuevo | update_nuevo | dlc_nuevo | contenido_nuevo
+    slug: str
+    name: str
+    letter: str
+    version: str | None  # carpeta de versión del contenido nuevo (p. ej. "U-PD 1.3.0")
+    archivos: int  # archivos nuevos de este evento
+    bytes_nuevos: int
+    detalle: list[str] = []  # rutas nuevas (relativas al título)
+    igdb_cover: str | None
+    detectada_en: datetime
+    vigente: bool = True  # el título sigue en la biblioteca
+    titulo: TitleSummary | None = None  # datos vivos del título (tarjeta)
+
+
+class NovedadesOut(BaseModel):
+    items: list[NovedadOut]
+    total: int
+    offset: int
+    limit: int
+    resumen: dict
+
+
 # ── sync ─────────────────────────────────────────────────────
 class SyncStatusOut(BaseModel):
     last_snapshot: SnapshotOut | None
     configured_dump: str
     dump_exists: bool
+    # Frescura del volcado: si el refresco se para, la BD deja de actualizarse.
+    dump_generated_at: str | None = None  # fecha de la cabecera del volcado
+    dump_fuente: str | None = None  # share de la biblioteca (estable entre cuentas)
+    dump_age_hours: float | None = None
+    dump_max_edad_horas: int = 0
+    dump_obsoleto: bool = False
     megacmd_available: bool
     megacmd_binary: str | None
     megacmd_error: str | None

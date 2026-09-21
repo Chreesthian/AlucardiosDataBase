@@ -1,0 +1,258 @@
+---
+import Base from "../layouts/Base.astro";
+import GameCard from "../components/GameCard.astro";
+import { api, type NovedadOut, type NovedadesOut } from "../lib/api";
+import { formatBytes } from "../lib/format";
+
+// El backend clasifica cada evento; la página los muestra en dos bloques.
+const TIPOS_JUEGO = "juego_nuevo";
+const TIPOS_CONTENIDO = "update_nuevo,dlc_nuevo,contenido_nuevo";
+const LIMITE = 120;
+
+let juegos: NovedadesOut | null = null;
+let contenido: NovedadesOut | null = null;
+// Frescura del volcado: se consulta aparte y NUNCA rompe la página. Si el
+// pipeline de actualización está parado, la lista de esta sección estaría
+// incompleta en silencio, así que se avisa en pantalla.
+const estado = await api.syncStatus().catch(() => null);
+let error: string | null = null;
+try {
+  [juegos, contenido] = await Promise.all([
+    api.novedades({ tipo: TIPOS_JUEGO, limit: LIMITE }),
+    api.novedades({ tipo: TIPOS_CONTENIDO, limit: LIMITE }),
+  ]);
+} catch (e) {
+  error = e instanceof Error ? e.message : String(e);
+}
+
+const resumen = juegos?.resumen ?? contenido?.resumen ?? null;
+const nuevos: NovedadOut[] = juegos?.items ?? [];
+const actualizados: NovedadOut[] = contenido?.items ?? [];
+
+const ETIQUETA_TIPO: Record<string, string> = {
+  update_nuevo: "Actualización",
+  dlc_nuevo: "DLC",
+  contenido_nuevo: "Contenido",
+};
+
+// ¿La biblioteca está congelada? (volcado ausente o más viejo que el límite)
+const avisoVolcado = estado ? !estado.dump_exists || estado.dump_obsoleto : false;
+
+function edadLegible(horas: number | null): string {
+  if (horas === null) return "sin datos";
+  if (horas < 1) return `${Math.max(1, Math.round(horas * 60))} min`;
+  if (horas < 48) return `${Math.round(horas)} h`;
+  return `${Math.round(horas / 24)} días`;
+}
+
+// Las fechas llegan en UTC sin sufijo desde SQLite: se normalizan a UTC para que
+// el día mostrado no baile según la zona horaria del navegador.
+function fechaLegible(iso: string): string {
+  if (!iso) return "";
+  const conZona = /(Z|[+-]\d{2}:?\d{2})$/.test(iso) ? iso : `${iso}Z`;
+  const d = new Date(conZona);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" });
+}
+---
+
+<Base
+  title="Novedades"
+  description="Juegos nuevos y archivos nuevos de actualización y DLC en la biblioteca MEGA."
+>
+  <section class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <h1 class="text-3xl font-semibold tracking-tight text-zinc-100">Novedades</h1>
+      <p class="mt-1 max-w-2xl text-sm text-zinc-500">
+        Lo último que ha entrado en la biblioteca: juegos completos nuevos y títulos que han
+        recibido archivos nuevos de actualización o DLC.
+      </p>
+      {
+        estado?.dump_generated_at ? (
+          <p class="mt-1 text-xs text-zinc-500">
+            Volcado de la biblioteca: {fechaLegible(estado.dump_generated_at)} (hace {edadLegible(
+              estado.dump_age_hours,
+            )})
+            {
+              estado.dump_fuente ? (
+                <span>
+                  · fuente: <span class="text-zinc-400">{estado.dump_fuente}</span>
+                </span>
+              ) : null
+            }
+          </p>
+        ) : null
+      }
+    </div>
+    {
+      resumen ? (
+        <div class="flex flex-wrap gap-2 text-xs">
+          <span class="rounded-lg bg-zinc-900 px-3 py-1.5 text-zinc-300">
+            <b class="text-zinc-100">{resumen.juegos_nuevos}</b> juegos nuevos
+          </span>
+          <span class="rounded-lg bg-zinc-900 px-3 py-1.5 text-zinc-300">
+            <b class="text-zinc-100">{resumen.por_tipo.update_nuevo ?? 0}</b> con actualización
+          </span>
+          <span class="rounded-lg bg-zinc-900 px-3 py-1.5 text-zinc-300">
+            <b class="text-zinc-100">{resumen.por_tipo.dlc_nuevo ?? 0}</b> con DLC
+          </span>
+        </div>
+      ) : null
+    }
+  </section>
+
+  {
+    avisoVolcado ? (
+      <section class="mt-6 rounded-2xl border border-amber-800/70 bg-amber-950/25 p-4">
+        <h2 class="text-sm font-semibold text-amber-300">
+          <span aria-hidden="true">⚠</span> La biblioteca puede estar desactualizada
+        </h2>
+        <p class="mt-1 text-xs leading-relaxed text-amber-200/80">
+          {estado?.dump_exists === false
+            ? "No se encuentra el volcado MEGA que alimenta el catálogo."
+            : `El volcado no se refresca desde hace ${edadLegible(
+                estado?.dump_age_hours ?? null,
+              )} (límite ${estado?.dump_max_edad_horas ?? 0} h).`}{" "}
+          Los juegos nuevos, actualizaciones y DLC posteriores a esa fecha no aparecen aquí.
+          Refréscalo ya con <code class="rounded bg-black/40 px-1 py-0.5 text-amber-100">
+            make volcado
+          </code>{" "}
+          en el host, o programa el refresco automático con{" "}
+          <code class="rounded bg-black/40 px-1 py-0.5 text-amber-100">make volcado-cron</code>.
+        </p>
+      </section>
+    ) : null
+  }
+
+  {
+    error ? (
+      <section class="mt-10 rounded-2xl border border-red-900/60 bg-red-950/30 p-8 text-center">
+        <h2 class="text-lg font-semibold text-red-300">No se pudo conectar con la API</h2>
+        <p class="mx-auto mt-2 max-w-2xl text-sm text-red-400/80">{error}</p>
+      </section>
+    ) : (
+      <>
+        <section class="mt-10">
+          <header class="flex items-baseline justify-between gap-3">
+            <h2 class="text-xl font-semibold text-zinc-100">
+              <span aria-hidden="true">🎉</span> Juegos nuevos
+            </h2>
+            <span class="text-xs text-zinc-500">
+              {nuevos.length} de {juegos?.total ?? 0}
+            </span>
+          </header>
+          {nuevos.length === 0 ? (
+            <p class="mt-4 rounded-xl border border-zinc-800/70 bg-zinc-900/40 p-6 text-sm text-zinc-500">
+              Todavía no hay juegos nuevos registrados. La sección se alimenta de cada escaneo del
+              volcado MEGA.
+            </p>
+          ) : (
+            <div class="mt-5 grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+              {nuevos.map((n) =>
+                n.titulo ? (
+                  <GameCard game={n.titulo} />
+                ) : (
+                  <div class="opacity-60" title={`${n.name} (ya no está en la biblioteca)`}>
+                    <div class="relative aspect-2/3 w-full overflow-hidden rounded-xl bg-zinc-800">
+                      {n.igdb_cover ? (
+                        <img
+                          src={n.igdb_cover}
+                          alt={n.name}
+                          loading="lazy"
+                          class="absolute inset-0 h-full w-full object-cover"
+                        />
+                      ) : null}
+                    </div>
+                    <h3 class="clamp-2 mt-2 px-0.5 text-sm font-medium leading-snug text-zinc-400">
+                      {n.name}
+                    </h3>
+                    <p class="mt-1 px-0.5 text-[11px] text-zinc-500">fuera de la biblioteca</p>
+                  </div>
+                )
+              )}
+            </div>
+          )}
+        </section>
+
+        <section class="mt-12">
+          <header class="flex items-baseline justify-between gap-3">
+            <h2 class="text-xl font-semibold text-zinc-100">
+              <span aria-hidden="true">⬆️</span> Nuevos archivos de actualización y DLC
+            </h2>
+            <span class="text-xs text-zinc-500">
+              {actualizados.length} de {contenido?.total ?? 0}
+            </span>
+          </header>
+          {actualizados.length === 0 ? (
+            <p class="mt-4 rounded-xl border border-zinc-800/70 bg-zinc-900/40 p-6 text-sm text-zinc-500">
+              Ningún título ha recibido archivos nuevos desde el último escaneo.
+            </p>
+          ) : (
+            <ul class="mt-5 divide-y divide-zinc-800/70 overflow-hidden rounded-xl border border-zinc-800/70 bg-zinc-900/30">
+              {actualizados.map((n) => (
+                <li class="flex items-center gap-4 p-3.5">
+                  {n.igdb_cover ? (
+                    <img
+                      src={n.igdb_cover}
+                      alt=""
+                      loading="lazy"
+                      class="h-16 w-11 shrink-0 rounded-md object-cover"
+                    />
+                  ) : (
+                    <span class="h-16 w-11 shrink-0 rounded-md bg-zinc-800" aria-hidden="true" />
+                  )}
+                  <div class="min-w-0 flex-1">
+                    <div class="flex flex-wrap items-center gap-2">
+                      {n.vigente ? (
+                        <a
+                          href={`/game/${n.slug}/`}
+                          class="truncate font-medium text-zinc-100 hover:text-blue-400"
+                        >
+                          {n.name}
+                        </a>
+                      ) : (
+                        <span class="truncate font-medium text-zinc-400">{n.name}</span>
+                      )}
+                      <span class="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300">
+                        {ETIQUETA_TIPO[n.tipo] ?? n.tipo}
+                      </span>
+                      {n.version ? (
+                        <span class="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-300">
+                          {n.version}
+                        </span>
+                      ) : null}
+                      {!n.vigente ? (
+                        <span class="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-500">
+                          fuera de la biblioteca
+                        </span>
+                      ) : null}
+                    </div>
+                    <p class="mt-1 text-xs text-zinc-500">
+                      {n.archivos} {n.archivos === 1 ? "archivo nuevo" : "archivos nuevos"} ·{" "}
+                      {formatBytes(n.bytes_nuevos)}
+                    </p>
+                    {n.detalle.length > 0 ? (
+                      <details class="mt-1.5">
+                        <summary class="cursor-pointer text-[11px] text-zinc-500 hover:text-zinc-300">
+                          ver archivos
+                        </summary>
+                        <ul class="mt-1 space-y-0.5">
+                          {n.detalle.slice(0, 12).map((d) => (
+                            <li class="truncate text-[11px] text-zinc-500">· {d}</li>
+                          ))}
+                        </ul>
+                      </details>
+                    ) : null}
+                  </div>
+                  <time class="shrink-0 text-xs text-zinc-500" datetime={n.detectada_en}>
+                    {fechaLegible(n.detectada_en)}
+                  </time>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </>
+    )
+  }
+</Base>
