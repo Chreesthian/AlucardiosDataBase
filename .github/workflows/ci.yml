@@ -38,6 +38,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
+        with:
+          # `frontend/package.json` no declara `packageManager`, así que hay que
+          # fijar la versión aquí (misma mayor que el Dockerfile: pnpm@11).
+          version: 11
       - uses: actions/setup-node@v4
         with:
           node-version: 22
