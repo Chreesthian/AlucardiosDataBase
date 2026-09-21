@@ -75,13 +75,17 @@ services:
     image: alucard/backend:${ALUCARD_TAG:-latest}
     init: true
     restart: unless-stopped
-    # Watcher de sincronización incremental autónomo: cada 300 s comprueba el
-    # hash del volcado MEGA; si cambió, sincroniza la BD y re-exporta la
-    # biblioteca. Los títulos nuevos los enriquece backend-enrich solo.
+    # Watcher de sincronización incremental autónomo: cada 300 s comprueba la
+    # frescura del volcado y el hash; si cambió, sincroniza la BD y re-exporta
+    # la biblioteca. Los títulos nuevos los enriquece backend-enrich solo.
+    # `--max-edad 26`: el vigía NO puede refrescar la fuente (MEGAcmd vive en el
+    # host, ver `make volcado-cron`), así que si el volcado supera 26 h de
+    # antigüedad sale con rc=3 → Docker lo reinicia y el fallo se ve en
+    # `docker compose ps` + logs (nada de "sin cambios" eternos en silencio).
     entrypoint: ["python", "-m", "app.sync"]
     command: ["--dump", "/dump/mega_cuenta_contenido_MEGAcmd.txt",
               "--db", "/data/alucard.db", "--watch", "--interval", "300",
-              "--export"]
+              "--max-edad", "26", "--export"]
     env_file:
       - path: ./backend/.env
         required: false

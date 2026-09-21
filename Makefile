@@ -1,7 +1,7 @@
 # Makefile de AlucardiosDataBase
 SHELL := /bin/bash
 
-.PHONY: help build up down ps logs restart dev test lint clean
+.PHONY: help build up down ps logs restart dev test lint clean volcado novedades
 
 help: ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
@@ -44,8 +44,32 @@ audit: ## Despliegue limpio + auditoría interna/externa
 enrich: ## Enriquece títulos con la ficha IGDB completa (GamesDb)
 	docker compose exec -T backend /app/.venv/bin/python -m app.enrich
 
+volcado: ## Refresca el volcado canónico desde MEGA (requiere sesión MEGAcmd)
+	cd backend && uv run python ../scripts/refrescar_volcado.py
+
+volcado-auto: ## Refresca el volcado AHORA y aplica el escaneo (falla ruidoso)
+	./scripts/autovolcado.sh
+
+volcado-cron: ## Instala el refresco automático del volcado (cron cada 6 h)
+	./scripts/autovolcado.sh --install-cron
+
+volcado-cron-off: ## Quita el refresco automático del volcado
+	./scripts/autovolcado.sh --remove-cron
+
+volcado-estado: ## Último resultado del refresco automático del volcado
+	./scripts/autovolcado.sh --estado
+
+credenciales: ## Guarda las credenciales MEGA de la semana (rotan semanalmente)
+	./scripts/autovolcado.sh --set-cred
+
+sync-status: ## Frescura del volcado y estado del vigía (API)
+	@curl -s "http://127.0.0.1:$${BACKEND_PORT:-7331}/api/sync/status" | python3 -m json.tool
+
 sync: ## Escaneo incremental (añade/borra por diff, sin reconstruir) + export
 	docker compose exec -T backend /app/.venv/bin/python -m app.sync --dump /dump/mega_cuenta_contenido_MEGAcmd.txt --export
+
+novedades: ## Novedades registradas (juegos nuevos y contenido nuevo)
+	docker compose exec -T backend /app/.venv/bin/python -m app.novedades
 
 export: ## Exporta la biblioteca completa a data/biblioteca.json
 	docker compose exec -T backend /app/.venv/bin/python -m app.exportdb --out /data/biblioteca.json

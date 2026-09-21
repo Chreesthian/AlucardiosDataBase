@@ -18,6 +18,7 @@ backend/data/*
 
 # Volcado canónico MEGA y artefactos exportados (se regeneran con el pipeline)
 mega_cuenta_contenido_MEGAcmd.txt
+mega_cuenta_contenido_MEGAcmd.txt.*
 data/*
 !data/.gitkeep
 

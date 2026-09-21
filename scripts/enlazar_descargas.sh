@@ -7,6 +7,11 @@
 #   - Cuando una cuenta MEGA activa tenga los nodos (share entrante montado en
 #     `/from/…:BCKP1` o la cuenta dueña con `/BCKP1` en su nube).
 #
+# CREDENCIALES ROTATIVAS:
+#   Se reutiliza `scripts/lib/mega_session.sh`: si las credenciales de la semana
+#   (MEGA_EMAIL/MEGA_PASSWORD, p. ej. ~/.config/alucard/mega.env) apuntan a otra
+#   cuenta, se re-loguea sola antes del volcado de enlaces.
+#
 # QUÉ HACE:
 #   1. Comprueba que exista una raíz alcanzable (`/from` o `/BCKP1`).
 #   2. Para la API, copia la BD del contenedor a una copia local segura.
@@ -24,6 +29,19 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MEGA_BIN="${MEGA_BIN:-/home/christian/opt/megacmd/usr/bin}"
 export PATH="$MEGA_BIN:$PATH"
 export HOME="${HOME:-/home/christian}"
+# shellcheck source=lib/mega_session.sh
+source "$ROOT/scripts/lib/mega_session.sh"
+
+echo "── 0/5 Credenciales y sesión MEGAcmd (rotan semanalmente) ───────────"
+if cargar_credenciales_mega "$ROOT"; then
+  echo "   credenciales: $MEGA_EMAIL_FUENTE ($MEGA_EMAIL)"
+fi
+asegurar_sesion_mega || {
+  echo "⚠  Sin sesión MEGAcmd utilizable."
+  echo "   → Guarda las credenciales de la semana:"
+  echo "     ./scripts/autovolcado.sh --set-cred"
+  exit 1
+}
 
 LIMITE=""
 FORCE="${FORCE:-0}"
