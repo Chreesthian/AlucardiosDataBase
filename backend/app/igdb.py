@@ -253,6 +253,113 @@ def titulo_para_igdb(nombre: str) -> str:
     return _ALIASES_TITULO.get(limpio, limpio)
 
 
+# Extensiones de ROM/archivo de los volcados de la colección retro (No-Intro,
+# GoodTools, Redump, MAME…). Solo se recortan si son la extensión REAL del
+# fichero: nunca se toca un título que acabe en un punto ("Sonic 3.5").
+_EXT_ROM = frozenset(
+    {
+        "zip",
+        "7z",
+        "rar",
+        "gz",
+        "tar",
+        "iso",
+        "chd",
+        "cue",
+        "bin",
+        "img",
+        "cso",
+        "pbp",
+        "nrg",
+        "mdf",
+        "mds",
+        "ccd",
+        "wbfs",
+        "wad",
+        "xci",
+        "nsp",
+        "cia",
+        "3ds",
+        "nds",
+        "gba",
+        "gbc",
+        "gb",
+        "nes",
+        "fds",
+        "snes",
+        "smc",
+        "sfc",
+        "fig",
+        "n64",
+        "z64",
+        "v64",
+        "md",
+        "gen",
+        "smd",
+        "sms",
+        "gg",
+        "a26",
+        "a52",
+        "a78",
+        "lnx",
+        "d64",
+        "t64",
+        "d81",
+        "adf",
+        "adz",
+        "dsk",
+        "cas",
+        "tap",
+        "mx1",
+        "mx2",
+        "sg",
+        "col",
+        "int",
+        "vec",
+        "pce",
+        "vb",
+        "rom",
+        "apk",
+    }
+)
+
+
+def titulo_para_igdb_rom(nombre: str) -> str:
+    """Nombre de ROM de un volcado retro → término de búsqueda IGDB.
+
+    Los volcados de ROMs (No-Intro/GoodTools/Redump) arrastran en el nombre ruido
+    que NO es parte del título: la extensión del fichero, la región/idioma
+    (`(Japan, USA)`, `(En,Fr,De,Es,It)`), la revisión (`(Rev 1)`), el estado
+    (`(Beta)`, `(Demo)`) y las marcas de dump (`[!]`). Ese ruido diluye la
+    confianza del matcher —el ratio de tokens compartidos cae por debajo de 0.5—
+    y el juego se queda sin ficha, así que se recorta AQUÍ y el resto se
+    normaliza con `titulo_para_igdb`:
+
+        Tomb Raider (USA).7z                     → tomb raider
+        Dementium II (Europe) (En,Fr,De,Es,It).zip → dementium 2
+        Super Mario 64 (Japan, USA) [!].zip      → super mario 64
+
+    Los MAME usan nombres cortos (`aof.zip` → `aof`): esos no existen en IGDB y
+    quedan como `miss` (la sección sigue publicando la ficha del sistema). No se
+    intenta adivinar el título largo a partir del corto.
+    """
+    import re
+
+    base = (nombre or "").strip()
+    m = re.search(r"\.([A-Za-z0-9]{1,5})$", base)
+    if m and m.group(1).lower() in _EXT_ROM:
+        base = base[: m.start()]
+    # Etiquetas de región/idioma/revisión/estado, repetidas y anidadas fuera.
+    anterior = None
+    while anterior != base:
+        anterior = base
+        base = re.sub(r"\s*[\(\[\{][^()\[\]{}]*[\)\]\}]\s*", " ", base)
+    base = re.sub(r"\s+", " ", base).strip(" -_.")
+    if not base:
+        return ""
+    return titulo_para_igdb(base)
+
+
 def _tokens_extra(termino_limpio: str, candidato: str) -> int:
     """Tokens del candidato que sobran frente a la consulta (penaliza bundles)."""
     n_consulta = len(termino_limpio.split())
@@ -706,6 +813,34 @@ def _encaja_core_decorativo(limpio: str, candidato: str) -> bool:
     return len(core) >= 2 and core == cand
 
 
+def _eleccion_inequivoca(limpio: str, candidatos: list[JuegoIgdb]) -> JuegoIgdb | None:
+    """Candidato de identidad inequívoca dentro de un lote (o None).
+
+    Se usa para CORTAR la búsqueda de variantes en cuanto el match es seguro.
+    Solo acepta criterios PROVADAMENTE equivalentes al resultado del matcher v3
+    completo (no cambia la calidad, solo ahorra peticiones):
+
+    1) núcleo decorativo exacto (`_encaja_core_decorativo`, regla 1 de v3);
+    2) identidad exacta con el título limpio: es la similitud máxima posible
+       (`_ratio_pegado` = 1.0), así que la regla 2 de v3 lo habría elegido.
+
+    Si ninguno es seguro devuelve None y el matcher sigue probando variantes.
+    """
+    for j in candidatos:
+        if _encaja_core_decorativo(limpio, j.name or ""):
+            return j
+    objetivo = _pegado(_compactar_letras_espaciadas(limpio))
+    if not objetivo:
+        return None
+    for j in candidatos:
+        nombre = j.name or ""
+        if _pegado(_compactar_letras_espaciadas(titulo_para_igdb(nombre))) != objetivo:
+            continue
+        if _aceptable_v3(limpio, nombre):
+            return j
+    return None
+
+
 def _aceptable_v3(limpio: str, candidato: str) -> bool:
     """Puerta relajada v3 (conservadora: NO admite con 2 palabras sueltas).
 
@@ -756,6 +891,7 @@ class IgdbConnector:
         )
         self._token: str | None = None
         self._throttle = threading.Lock()
+        self._token_lock = threading.Lock()
         self._ultima_llamada = 0.0
 
     def close(self) -> None:
@@ -787,6 +923,13 @@ class IgdbConnector:
             raise IgdbNoConfigurado(
                 "IGDB no configurado: define IGDB_CLIENT_ID e IGDB_CLIENT_SECRET en .env"
             )
+        # Un solo POST de token aunque varios hilos enriquezcan a la vez.
+        with self._token_lock:
+            if self._token:
+                return self._token
+            return self._renovar_token()
+
+    def _renovar_token(self) -> str:
         self._esperar_throttle()
         respuesta = self._http.post(
             self.settings.igdb_token_url,
@@ -913,12 +1056,17 @@ class IgdbConnector:
         """Match v3 (recuperación): conserva la puerta v2 y añade vías seguras.
 
         Orden:
+          0) SALIDA TEMPRANA: si una variante ya devuelve identidad inequívoca
+             (`_eleccion_inequivoca`: núcleo decorativo exacto o puerta estricta),
+             se devuelve sin gastar las variantes restantes;
           1) puerta v2 sobre el conjunto de candidatos devueltos por IGDB;
           2) núcleo decorativo exacto (p. ej. 'Beyond Hanwell Nintendo Switch
              Edition' → 'Beyond Hanwell');
           3) puerta relajada `_aceptable_v3` (identidad casi perfecta).
         Las variantes de búsqueda compactan letras espaciadas y recortan colas
         numéricas/de edición para que IGDB devuelva el juego real.
+        Si TODAS las búsquedas fallaron por API (red/429/timeout) se propaga el
+        error en vez de devolver None, para no marcarlo como miss permanente.
         """
         variantes: list[str] = []
 
@@ -927,11 +1075,15 @@ class IgdbConnector:
             if v and v not in variantes:
                 variantes.append(v)
 
-        if nombre:
-            _add(_compactar_letras_espaciadas(_titulo_busqueda_libre(nombre)))
+        # El término LIMPIO va primero: es el que produce la identidad exacta y,
+        # por tanto, el que permite la salida temprana (menos peticiones). El
+        # conjunto de variantes es el mismo de antes, así que el resultado del
+        # matcher completo no cambia.
         _add(limpio)
         comp = _compactar_letras_espaciadas(limpio)
         _add(comp)
+        if nombre:
+            _add(_compactar_letras_espaciadas(_titulo_busqueda_libre(nombre)))
         toks = comp.split()
         while len(toks) > 2:  # cola larga → núcleo progresivo
             toks = toks[:-1]
@@ -941,15 +1093,32 @@ class IgdbConnector:
         variantes = variantes[:7]
 
         vistos: dict[str, JuegoIgdb] = {}
+        fallos = 0
+        ultimo_error: IgdbApiError | None = None
         for v in variantes:
             try:
                 resultados = self.buscar_juego(v, limite=limite)
-            except IgdbApiError:
+            except IgdbApiError as exc:
+                fallos += 1
+                ultimo_error = exc
                 continue
+            nuevos: list[JuegoIgdb] = []
             for j in resultados:
                 if j.slug and j.slug not in vistos:
                     vistos[j.slug] = j
+                    nuevos.append(j)
+            # SALIDA TEMPRANA: esta variante ya dio una identidad inequívoca, así
+            # que no gastamos las restantes (misma calidad, muchas menos
+            # peticiones: es el grueso del coste del enriquecimiento en lote).
+            seguro = _eleccion_inequivoca(limpio, nuevos)
+            if seguro is not None:
+                return seguro
         if not vistos:
+            # Si NO falló ninguna búsqueda, el miss es real. Si fallaron todas
+            # (red/429/timeout), propagamos para no marcarlo como miss: `run`
+            # lo cuenta como error y se reintenta en otra pasada.
+            if fallos and fallos == len(variantes) and ultimo_error is not None:
+                raise ultimo_error
             return None
         juegos = list(vistos.values())
 
