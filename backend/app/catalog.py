@@ -60,7 +60,8 @@ _FORMATO_FAMILIA = {
 
 ROLES_LABEL = {
     "root": "Raíz de sector",
-    "bucket": "Carpeta de letra",
+    "bucket": "Carpeta de letra",  # en la colección retro, el SISTEMA (nivel 1)
+    "group": "Grupo",  # contenedor intermedio de la colección retro (p. ej. `B/`)
     "title": "Juego",
     "version": "Variante",
 }
