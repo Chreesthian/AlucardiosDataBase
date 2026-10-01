@@ -28,6 +28,11 @@ const link = (active: boolean) =>
       <a href="/novedades/" class={link(pathname.startsWith("/novedades"))}>
         Novedades
       </a>
+      {/* Sección aparte: ROMs retro, otro catálogo (no comparte datos con Switch). */}
+      <span class="h-4 w-px bg-zinc-800" aria-hidden="true"></span>
+      <a href="/retro/" class={link(pathname.startsWith("/retro"))}>
+        Retro
+      </a>
     </div>
   </nav>
 </header>

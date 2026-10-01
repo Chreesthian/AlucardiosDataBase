@@ -1,0 +1,259 @@
+---
+import Base from "../layouts/Base.astro";
+import GameCard from "../components/GameCard.astro";
+import { api, type BucketOut, type RetroStatusOut, type TitleSummary } from "../lib/api";
+import { formatBytes } from "../lib/format";
+
+// Sección APARTE de la biblioteca: ROMs retro. Otro volcado, otra BD y otra
+// cuenta del pool; el filtro principal es el SISTEMA (`ARC N-64`, `ARC Mame2003`…)
+// en vez de la letra A-Z.
+const sp = new URLSearchParams(Astro.url.searchParams);
+const q = sp.get("q") ?? "";
+const sistema = sp.get("sistema") ?? "";
+// Por defecto el catálogo se ordena por el NOMBRE OFICIAL de IGDB (el de la
+// ficha), no por el fichero ROM: "After Burner II", no "After Burner.zip".
+const sort = sp.get("sort") ?? "canonico";
+const offset = Math.max(0, parseInt(sp.get("offset") ?? "0", 10) || 0);
+const limit = 60;
+
+let meta = null;
+let sistemas: BucketOut[] = [];
+let list = null;
+let estado: RetroStatusOut | null = null;
+let error: string | null = null;
+try {
+  [meta, sistemas, list] = await Promise.all([
+    api.retroMeta(),
+    api.retroSistemas(),
+    api.retroTitles({
+      q: q || undefined,
+      sistema: sistema || undefined,
+      sort: sort as never,
+      offset,
+      limit,
+    }),
+  ]);
+} catch (e) {
+  error = e instanceof Error ? e.message : String(e);
+}
+// Frescura del volcado retro: nunca rompe la página (solo avisa).
+estado = await api.retroStatus().catch(() => null);
+
+function mkQuery(over: Record<string, string | number | null | undefined>): string {
+  const s = new URLSearchParams();
+  if (q && over.q === undefined) s.set("q", q);
+  if (sistema && over.sistema === undefined) s.set("sistema", sistema);
+  if (sort && over.sort === undefined) s.set("sort", sort);
+  for (const [k, v] of Object.entries(over)) {
+    if (v === undefined || v === null || v === "" || v === 0) s.delete(k);
+    else s.set(k, String(v));
+  }
+  return s.toString();
+}
+
+const chipIdle =
+  "rounded-lg bg-zinc-900 px-2.5 py-1 text-xs font-medium text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200";
+const chipActive = "rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white";
+const items: TitleSummary[] = list?.items ?? [];
+const total: number = list?.total ?? 0;
+const hasNext = offset + items.length < total;
+const congelado = estado ? !estado.volcado_existe || estado.volcado_obsoleto : false;
+// Plataforma del filtro activo, por su NOMBRE OFICIAL (el filtro puede llegar
+// como clave canónica, nombre oficial o código del volcado: los tres valen).
+const sistemaActivo = sistemas.find(
+  (s) => s.plataforma?.clave === sistema || s.letter === sistema,
+);
+const etiquetaSistema = sistemaActivo?.plataforma?.nombre ?? sistema;
+---
+
+<Base title="Retro" description="ROMs retro (arcade, consolas y microordenadores) en MEGA.">
+  <section class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <h1 class="text-3xl font-semibold tracking-tight text-zinc-100">Retro</h1>
+      <p class="mt-1 max-w-2xl text-sm text-zinc-500">
+        Colección de ROMs aparte de la biblioteca: arcade, consolas y microordenadores, con su
+        propio volcado de MEGA.
+      </p>
+    </div>
+    <div class="flex flex-wrap gap-2 text-xs">
+      <span class="rounded-lg bg-zinc-900 px-3 py-1.5 text-zinc-300">
+        <b class="text-zinc-100">{meta?.titles ?? "–"}</b> juegos
+      </span>
+      <span class="rounded-lg bg-zinc-900 px-3 py-1.5 text-zinc-300">
+        <b class="text-zinc-100">{sistemas.length || "–"}</b> sistemas
+      </span>
+      <span class="rounded-lg bg-zinc-900 px-3 py-1.5 text-zinc-300">
+        <b class="text-zinc-100">{meta?.files ?? "–"}</b> archivos
+      </span>
+      <span class="rounded-lg bg-zinc-900 px-3 py-1.5 text-zinc-300">
+        <b class="text-zinc-100">{meta ? formatBytes(meta.bytes) : "–"}</b> MEGA
+      </span>
+      <span
+        class="rounded-lg bg-zinc-900 px-3 py-1.5 text-zinc-300"
+        title="Juegos con carátula y ficha de IGDB ya resueltas (worker backend-retro-enrich)"
+      >
+        <b class="text-zinc-100">{estado ? estado.caratulas : meta?.covers ?? "–"}</b> con carátula
+      </span>
+      <span
+        class="rounded-lg bg-zinc-900 px-3 py-1.5 text-zinc-300"
+        title="Juegos ya identificados en IGDB, con su nombre oficial y su año de lanzamiento"
+      >
+        <b class="text-zinc-100">{estado ? estado.con_nombre_oficial : "–"}</b> con nombre oficial
+      </span>
+    </div>
+  </section>
+
+  {congelado ? (
+    <p class="mt-5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+      {estado?.aviso ??
+        "El volcado retro está ausente o caducado: esta sección se está quedando congelada."}
+    </p>
+  ) : null}
+
+  {error ? (
+    <section class="mt-10 rounded-2xl border border-red-200 bg-red-50 p-8 text-center">
+      <h2 class="text-lg font-semibold text-red-700">No se pudo cargar la colección retro</h2>
+      <p class="mx-auto mt-2 max-w-2xl text-sm text-red-500">{error}</p>
+      <pre class="mx-auto mt-4 max-w-xl overflow-x-auto rounded-lg border border-zinc-200 bg-zinc-50 p-4 text-left text-xs text-zinc-600">make volcado-retro
+
+# o, paso a paso:
+cd backend && uv run python -m app.sync --db ../data/retro.db \
+  --dump ../mega_retro_contenido_MEGAcmd.txt --coleccion retro</pre>
+    </section>
+  ) : (
+    <>
+      <form method="get" action="/retro/" class="relative mt-6">
+        <input
+          type="text"
+          name="q"
+          id="retro-search-input"
+          autocomplete="off"
+          value={q}
+          placeholder="Buscar por nombre oficial o fichero ROM…"
+          class="w-full rounded-xl border border-zinc-800 bg-zinc-900/60 px-4 py-3 pr-11 text-sm text-zinc-100 placeholder-zinc-500 outline-none focus:border-emerald-500"
+        />
+        {sistema ? <input type="hidden" name="sistema" value={sistema} /> : null}
+        <button type="submit" class="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg px-2 py-1.5 text-zinc-500 hover:text-zinc-200" aria-label="Buscar">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" />
+          </svg>
+        </button>
+        <div id="retro-search-results" hidden class="absolute z-30 mt-1 w-full overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900 shadow-2xl"></div>
+      </form>
+
+      <nav class="mt-5 flex flex-wrap gap-1.5" aria-label="Sistemas">
+        <a
+          href={sistema === "" ? undefined : `/retro/?${mkQuery({ sistema: "", offset: 0 })}`}
+          class={sistema === "" ? chipActive : chipIdle}
+        >Todos</a>
+        {sistemas.map((s) => {
+          // La plataforma OFICIAL manda en la UI; el código del volcado (`letter`)
+          // solo se usa como respaldo en enlaces antiguos.
+          const plataforma = s.plataforma;
+          const clave = plataforma?.clave ?? s.letter;
+          const nombre = plataforma?.nombre ?? s.letter.replace(/^ARC\s*/, "");
+          const aviso = plataforma && !plataforma.conocido
+            ? ` · sistema del volcado aún sin plataforma oficial`
+            : "";
+          return (
+            <a
+              href={`/retro/?${mkQuery({ sistema: clave, offset: 0 })}`}
+              title={`${nombre} · ${s.titles} juegos · ${formatBytes(s.size_bytes)}${aviso}`}
+              class={sistema === clave || sistema === s.letter ? chipActive : chipIdle}
+            >{plataforma?.corto ?? nombre}<span class="ml-0.5 text-[10px] opacity-50">{s.titles}</span></a>
+          );
+        })}
+      </nav>
+
+      <div class="mt-4 flex items-center gap-3 text-xs text-zinc-500">
+        <span>Ordenar:</span>
+        {(
+          [
+            ["canonico", "Nombre oficial"],
+            ["name", "Fichero"],
+            ["year", "Época"],
+            ["size", "Tamaño"],
+            ["files", "Archivos"],
+          ] as const
+        ).map(([val, label]) => (
+          <a
+            href={`/retro/?${mkQuery({ sort: val, offset: 0 })}`}
+            class={sort === val ? "font-semibold text-emerald-400" : "hover:text-zinc-300"}
+          >{label}</a>
+        ))}
+        <span class="ml-auto">
+          {total} juegos{etiquetaSistema ? ` · ${etiquetaSistema}` : ""}
+        </span>
+      </div>
+
+      <section class="mt-5 grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+        {items.map((g) => (
+          <GameCard game={g} href={`/retro/game/${g.slug}/`} showLetter={false} mostrarCanonico />
+        ))}
+      </section>
+
+      {items.length === 0 && (
+        <p class="mt-10 text-center text-sm text-zinc-500">
+          Sin resultados para “{q || etiquetaSistema || "esta selección"}”.
+        </p>
+      )}
+
+      <div class="mt-10 flex items-center justify-center gap-3 text-sm">
+        {offset > 0 ? (
+          <a href={`/retro/?${mkQuery({ offset: Math.max(0, offset - limit) })}`} class="rounded-lg border border-zinc-800 px-4 py-2 hover:border-zinc-600">← Anterior</a>
+        ) : <span />}
+        {hasNext ? (
+          <a href={`/retro/?${mkQuery({ offset: offset + limit })}`} class="rounded-lg border border-zinc-800 px-4 py-2 hover:border-zinc-600">Siguiente →</a>
+        ) : <span />}
+      </div>
+    </>
+  )}
+</Base>
+
+<script is:inline>
+  // Autosuggest de la sección retro (mismo patrón que la biblioteca, otra API).
+  const qel = document.getElementById("retro-search-input");
+  const box = document.getElementById("retro-search-results");
+  if (qel && box) {
+    const BACKEND = window.__ALUCARD_API || "http://localhost:7331";
+    let timer = 0;
+    const render = (items) => {
+      if (!items.length) { box.hidden = true; return; }
+      const esc = (s) => String(s ?? "").replace(/</g, "&lt;");
+      // Se sugiere por el NOMBRE OFICIAL de IGDB y, debajo, el fichero ROM real.
+      box.innerHTML = items.map((g) => {
+        const oficial = (g.igdb_name || "").trim();
+        const titulo = oficial || g.name;
+        const fichero =
+          oficial && oficial.toLowerCase() !== String(g.name || "").toLowerCase()
+            ? `<span class="block truncate text-[11px] text-zinc-500">${esc(g.name)}</span>`
+            : "";
+        return `<a href="/retro/game/${encodeURIComponent(g.slug)}/" class="flex items-center justify-between gap-3 px-4 py-2.5 hover:bg-zinc-800">
+          <span class="min-w-0">
+            <span class="block truncate text-sm text-zinc-100">${esc(titulo)}</span>
+            ${fichero}
+          </span>
+          <span class="shrink-0 text-[10px] uppercase text-zinc-500">${esc(g.plataforma?.nombre || (g.letter || "").replace(/^ARC\s*/, ""))}</span>
+        </a>`;
+      }).join("");
+      box.hidden = false;
+    };
+    qel.addEventListener("input", () => {
+      clearTimeout(timer);
+      const v = qel.value.trim();
+      if (v.length < 2) { box.hidden = true; return; }
+      timer = window.setTimeout(async () => {
+        try {
+          const r = await fetch(`${BACKEND}/api/retro/titles?q=${encodeURIComponent(v)}&limit=8`);
+          const d = await r.json();
+          render(d.items || []);
+        } catch { box.hidden = true; }
+      }, 180);
+    });
+    document.addEventListener("click", (e) => {
+      if (!(e.target).closest("#retro-search-input, #retro-search-results")) box.hidden = true;
+    });
+  }
+</script>
+

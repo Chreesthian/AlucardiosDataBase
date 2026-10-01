@@ -4,10 +4,36 @@ import { extList, formatBytes, initials } from "../lib/format";
 
 interface Props {
   game: CardGame;
+  /** Enlace de la tarjeta (por defecto, la ficha del catálogo de Switch). */
+  href?: string;
+  /** La letra del bucket no tiene sentido en la colección retro (allí es el sistema). */
+  showLetter?: boolean;
+  /**
+   * Colección retro: la tarjeta se titula con el NOMBRE OFICIAL de IGDB y el
+   * nombre real del fichero/carpeta (la ROM) queda debajo, como identidad del
+   * contenido en MEGA. En Switch (defecto) nada cambia.
+   */
+  mostrarCanonico?: boolean;
 }
-const { game } = Astro.props;
+const {
+  game,
+  href = `/game/${game.slug}/`,
+  showLetter = true,
+  mostrarCanonico = false,
+} = Astro.props;
 
 const formats = extList(game.ext_json);
+const oficial = mostrarCanonico ? (game.igdb_name ?? "").trim() : "";
+// Título de la tarjeta: el oficial cuando lo hay, el real si no.
+const titulo = oficial || game.name;
+// Solo se repite la línea del fichero si APORTA algo (nombre distinto).
+const muestraFichero =
+  !!oficial && oficial.toLowerCase() !== game.name.toLowerCase().trim();
+const anio = mostrarCanonico ? game.igdb_year : null;
+// Badge superior: en Switch, la letra; en retro, la PLATAFORMA oficial
+// ("Mega Drive", "N64"…), nunca el código del volcado (`ARC S3G4-…`).
+const badge = showLetter ? game.letter : game.plataforma?.corto ?? formats[0] ?? "ROM";
+const badgeTitle = !showLetter && game.plataforma ? game.plataforma.nombre : undefined;
 const gradients = [
   "from-blue-600/80 to-indigo-900/80",
   "from-emerald-600/70 to-teal-900/80",
@@ -17,25 +43,29 @@ const gradients = [
   "from-cyan-600/70 to-sky-950/90",
   "from-fuchsia-600/70 to-pink-950/90",
 ];
-const grad = gradients[(game.name.charCodeAt(0) || 0) % gradients.length];
+const grad = gradients[(titulo.charCodeAt(0) || 0) % gradients.length];
 const extra =
   `${game.base_count > 0 ? `Base ${game.base_count}` : ""}` +
   `${game.update_count > 0 ? ` · ${game.update_count} upd` : ""}` +
   `${game.dlc_count > 0 ? ` · ${game.dlc_count} DLC` : ""}`;
 ---
 
-<a href={`/game/${game.slug}/`} class="group block" title={game.name}>
+<a
+  href={href}
+  class="group block"
+  title={muestraFichero ? `${titulo} — ${game.name}` : titulo}
+>
   <div
     class={`relative aspect-2/3 w-full overflow-hidden rounded-xl bg-linear-to-br ${grad} transition-transform duration-200 group-hover:scale-[1.02]`}
   >
     <div class="absolute inset-0 flex items-center justify-center">
-      <span class="text-4xl font-black tracking-tight text-white/80 drop-shadow">{initials(game.name)}</span>
+      <span class="text-4xl font-black tracking-tight text-white/80 drop-shadow">{initials(titulo)}</span>
     </div>
     {
       game.igdb_cover && (
         <img
           src={game.igdb_cover}
-          alt={game.name}
+          alt={titulo}
           loading="lazy"
           decoding="async"
           class="absolute inset-0 h-full w-full object-cover"
@@ -43,8 +73,11 @@ const extra =
         />
       )
     }
-    <span class="absolute left-2 top-2 z-10 rounded-md bg-black/40 px-1.5 py-0.5 text-[10px] font-bold text-white">
-      {game.letter}
+    <span
+      class="absolute left-2 top-2 z-10 rounded-md bg-black/40 px-1.5 py-0.5 text-[10px] font-bold text-white"
+      title={badgeTitle}
+    >
+      {badge}
     </span>
     <div class="absolute inset-x-0 bottom-0 z-10 bg-linear-to-t from-black/70 to-transparent px-2.5 pb-2 pt-6">
       <div class="flex flex-wrap items-center gap-1 text-[10px] font-semibold text-white/90">
@@ -53,9 +86,14 @@ const extra =
     </div>
   </div>
   <h3 class="clamp-2 mt-2 px-0.5 text-sm font-medium leading-snug text-zinc-100 group-hover:text-blue-400">
-    {game.name}
+    {titulo}{anio && <span class="ml-1 font-normal text-zinc-500">({anio})</span>}
   </h3>
   <p class="mt-1 px-0.5 text-[11px] text-zinc-500">
     {formatBytes(game.size_bytes)} · {game.file_count} archivos{extra && <span>{extra}</span>}
   </p>
+  {muestraFichero && (
+    <p class="mt-0.5 truncate px-0.5 text-[10px] text-zinc-600" title={`Fichero real: ${game.name}`}>
+      {game.name}
+    </p>
+  )}
 </a>

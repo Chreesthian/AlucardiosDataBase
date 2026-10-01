@@ -1,0 +1,367 @@
+---
+/**
+ * Ficha IGDB COMPARTIDA por las DOS colecciones (Switch y retro).
+ *
+ * Antes vivía dentro de `game/[slug].astro`; se extrae aquí para que las ROMs
+ * retro se vean EXACTAMENTE igual que los juegos del catálogo de Switch:
+ * artwork hero, carátula, nombre canónico de IGDB, ratings, PEGI/ESRB, sinopsis,
+ * ficha técnica, vídeos, capturas, similares y el enlace a la ficha de IGDB.
+ *
+ * El NOMBRE CANÓNICO de IGDB siempre se ve; qué va de título y qué de subtítulo
+ * depende de la colección: en Switch manda el nombre real de la carpeta (el
+ * canónico baja a subtítulo si difiere) y en retro `priorizarCanonico` invierte
+ * la cabecera — arriba el título oficial de IGDB, debajo la ROM real
+ * (`ROM After Burner.zip`) — porque ahí los ficheros llevan ruido de dump.
+ *
+ * Lo que sí es propio de cada colección entra por slot: `contenido` (versiones y
+ * archivos; en Switch con los botones de descarga MEGA) y `badge` (la letra del
+ * bucket en Switch, el sistema en retro).
+ */
+import type { TitleDetailOut } from "../lib/api";
+import { initials } from "../lib/format";
+
+interface Props {
+  detail: TitleDetailOut;
+  /** Payload de `titles.igdb_json` (ficha_v 2) o `null` si aún no está enriquecido. */
+  ficha: Record<string, any> | null;
+  /**
+   * Colección retro: el título PRINCIPAL de la ficha es el nombre canónico de
+   * IGDB y la ROM (`After Burner.zip`) queda debajo como identidad del fichero.
+   * Por defecto (Switch) el principal es el nombre real de la carpeta y el
+   * canónico se enseña como subtítulo cuando difiere.
+   */
+  priorizarCanonico?: boolean;
+}
+const { detail, ficha, priorizarCanonico = false } = Astro.props;
+
+const STAR_PATH =
+  "M316.9 18C311.6 7 300.4 0 288.1 0s-23.4 7-28.8 18L195 150.3 51.4 171.5c-12 1.8-22 10.2-25.7 21.7s-.7 24.2 7.9 32.7L137.8 329 113.2 474.7c-2 12 3 24.2 12.9 31.3s23 8 33.8 2.3l128.3-68.5 128.3 68.5c10.8 5.7 23.9 4.9 33.8-2.3s14.9-19.3 12.9-31.3L438.5 329 542.7 225.9c8.6-8.5 11.7-21.2 7.9-32.7s-13.7-19.9-25.7-21.7L381.2 150.3 316.9 18z";
+
+function aCinco(v?: number | null): number | null {
+  if (v === null || v === undefined) return null;
+  return Math.round((v / 20) * 10) / 10;
+}
+
+function fechaLegible(iso?: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso.length === 10 ? `${iso}T00:00:00Z` : iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  try {
+    return d.toLocaleDateString("es-ES", { year: "numeric", month: "short", day: "numeric" });
+  } catch {
+    return iso;
+  }
+}
+
+function filaTecnica(clave: string, etiqueta: string): string[] | null {
+  const v = (ficha as any)?.[clave];
+  if (v === undefined || v === null) return null;
+  if (Array.isArray(v) && v.length === 0) return null;
+  const texto = Array.isArray(v) ? v.join(", ") : String(v);
+  return texto ? [etiqueta, texto] : null;
+}
+// Lanzamiento / Desarrollador / Editor ya figuran en la cabecera junto al
+// título; aquí solo quedan los datos técnicos que no aparecen antes.
+const techRows = [
+  filaTecnica("plataformas", "Plataformas"),
+  filaTecnica("generos", "Géneros"),
+  filaTecnica("temas", "Temas"),
+  filaTecnica("modos", "Modos"),
+  filaTecnica("perspectivas", "Perspectiva"),
+  filaTecnica("coleccion", "Colección"),
+  filaTecnica("franquicia", "Franquicia"),
+  filaTecnica("palabras_clave", "Palabras clave"),
+].filter(Boolean) as string[][];
+
+// Nombre CANÓNICO: IGDB escribe el título a su manera y las carpetas de MEGA o
+// los ficheros de ROM traen ruido ("Tomb Raider (USA).7z"). Se enseña como
+// subtítulo SOLO cuando el nombre normalizado no coincide, para no repetir la
+// misma línea en los miles de títulos ya correctos.
+function normNombre(s: string): string {
+  return s
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+const nombreOficial: string | null =
+  typeof ficha?.nombre_oficial === "string" ? ficha.nombre_oficial : null;
+const mostrarNombreOficial =
+  !!nombreOficial && normNombre(nombreOficial) !== normNombre(detail.name);
+// Cabecera: qué nombre va de título y cuál de subtítulo. En la colección retro
+// (`priorizarCanonico`) manda IGDB y el fichero ROM baja a subtítulo, etiquetado
+// como "ROM" para que se entienda que es el contenido real en MEGA.
+const enRetro = priorizarCanonico && mostrarNombreOficial;
+const tituloPrincipal: string = enRetro ? (nombreOficial as string) : detail.name;
+const subtitulo: string | null = enRetro
+  ? detail.name
+  : mostrarNombreOficial
+    ? nombreOficial
+    : null;
+const tituloSubtitulo = enRetro ? "Nombre real del fichero (ROM en MEGA)" : "Nombre canónico en IGDB";
+const etiquetaSubtitulo = enRetro ? "ROM" : "";
+---
+
+
+    {/* Artwork hero real de IGDB (t_1080p) a sangre completa. Solo se pinta si hay
+        un artwork dedicado: la portada y las capturas ya se muestran más abajo en
+        sus propias secciones, así que no se repiten aquí arriba como fallback. */}
+    {ficha?.hero_imagen && (
+      <div class="relative left-1/2 h-64 w-screen -translate-x-1/2 overflow-hidden sm:h-80 md:h-112">
+        <img
+          src={ficha.hero_imagen}
+          alt={`Arte de ${tituloPrincipal}`}
+          loading="eager"
+          decoding="async"
+          class="absolute inset-0 h-full w-full object-cover"
+          onerror="this.style.display='none'"
+        />
+      </div>
+    )}
+
+    {/* Panel de datos: fondo TRANSPARENTE (sin tarjeta blanca) */}
+    <div class="relative mt-6">
+      <div class="relative flex flex-col gap-6 p-5 sm:p-7 md:flex-row">
+        <div class="relative aspect-2/3 w-40 shrink-0 self-start overflow-hidden rounded-xl bg-linear-to-br from-blue-600/80 to-indigo-950 shadow-lg sm:w-48">
+          <div class="flex h-full w-full items-center justify-center">
+            <span class="text-5xl font-black text-white/80">{initials(tituloPrincipal)}</span>
+          </div>
+          {detail.igdb_cover && (
+            <img
+              src={detail.igdb_cover}
+              alt={tituloPrincipal}
+              loading="eager"
+              decoding="async"
+              class="absolute inset-0 h-full w-full object-cover"
+              onerror="this.style.display='none'"
+            />
+          )}
+        </div>
+
+        <div class="min-w-0 flex-1">
+          <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+            <div class="min-w-0">
+              <h1 class="text-3xl font-semibold tracking-tight text-zinc-100 sm:text-4xl">{tituloPrincipal}</h1>
+              {subtitulo && (
+                <p class="mt-1 text-sm text-zinc-400" title={tituloSubtitulo}>
+                  {etiquetaSubtitulo && (
+                    <span class="mr-1 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+                      {etiquetaSubtitulo}
+                    </span>
+                  )}
+                  {subtitulo}
+                </p>
+              )}
+              <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-zinc-500">
+                {ficha?.fecha_lanzamiento && (
+                  <span class="inline-flex items-center gap-1.5">
+                    <span class="font-medium text-zinc-400">Lanzamiento</span>
+                    {fechaLegible(ficha.fecha_lanzamiento)}
+                  </span>
+                )}
+                {ficha?.desarrollador && (
+                  <span class="inline-flex items-center gap-1.5">
+                    <span class="font-medium text-zinc-400">Desarrolla</span>
+                    <span class="text-zinc-300">{ficha.desarrollador}</span>
+                  </span>
+                )}
+                {ficha?.publicador && ficha.publicador !== ficha.desarrollador && (
+                  <span class="inline-flex items-center gap-1.5">
+                    <span class="font-medium text-zinc-400">Publica</span>
+                    <span class="text-zinc-300">{ficha.publicador}</span>
+                  </span>
+                )}
+              </div>
+            </div>
+            <slot name="badge" />
+          </div>
+
+          {(ficha && (ficha.rating != null || ficha.rating_agregado != null)) && (
+            <div class="mt-5 flex flex-wrap gap-7">
+              {ficha.rating != null && (
+                <div class="flex items-center gap-2.5">
+                  <svg viewBox="0 0 576 512" aria-hidden="true" focusable="false" class="h-9 w-9 shrink-0" style="color: #ffe066">
+                    <path fill="currentColor" d={STAR_PATH} />
+                  </svg>
+                  <div>
+                    <div class="text-2xl font-black leading-none text-zinc-100">{aCinco(ficha.rating)}</div>
+                    <div class="mt-0.5 text-xs text-zinc-500">{ficha.votos ?? 0} valoraciones de usuarios</div>
+                  </div>
+                </div>
+              )}
+              {ficha.rating_agregado != null && (
+                <div class="flex items-center gap-2.5">
+                  <svg viewBox="0 0 576 512" aria-hidden="true" focusable="false" class="h-6 w-6 shrink-0" style="color: #ffe066">
+                    <path fill="currentColor" d={STAR_PATH} />
+                  </svg>
+                  <div>
+                    <div class="text-xl font-black leading-none text-zinc-100">{aCinco(ficha.rating_agregado)}</div>
+                    <div class="mt-0.5 text-xs text-zinc-500">valoración de críticos</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {ficha && (ficha.clasificaciones?.length || ficha.pegi) ? (
+            <div class="mt-5 flex flex-wrap items-center gap-2 text-xs">
+              {ficha.pegi && <span class="rounded-md bg-yellow-100 px-2 py-1 font-semibold text-yellow-700">{ficha.pegi}</span>}
+              {(ficha.clasificaciones ?? [])
+                .filter((c: any) => !ficha.pegi || c.texto !== ficha.pegi)
+                .map((c: any) => (
+                  <span class="rounded-md bg-[#ECECEC] px-2 py-1 font-semibold text-zinc-600">{c.texto || c.sistema}</span>
+                ))}
+            </div>
+          ) : null}
+
+          {(detail.formats?.length ?? 0) > 0 && (
+            <div class="mt-4 flex flex-wrap items-center gap-2 text-xs">
+              {detail.formats.map((f) => (
+                <span class="rounded-md bg-[#EAF4FF] px-2 py-1 font-semibold text-[#1A6FB5]">{f}</span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+
+      {/* Contenido propio de cada colección: versiones/archivos (en Switch, con descargas MEGA). */}
+      <slot name="contenido" />
+
+    {
+      ficha && (
+        <>
+          <section class="mt-8 max-w-3xl">
+            {ficha.descripcion && (
+              <div class="mt-5">
+                <h2 class="text-lg font-semibold text-zinc-100">Sinopsis</h2>
+                <p class="mt-2 text-sm leading-relaxed text-zinc-300">{ficha.descripcion}</p>
+              </div>
+            )}
+            {ficha.argumento && (
+              <div class="mt-5">
+                <h2 class="text-lg font-semibold text-zinc-100">Argumento</h2>
+                <p class="mt-2 text-sm leading-relaxed text-zinc-400">{ficha.argumento}</p>
+              </div>
+            )}
+          </section>
+
+          {
+            (() => {
+              const fx = ficha as any;
+              // Un único bloque de enlaces: webs oficiales/sociales + tiendas externas,
+              // más el enlace a la propia ficha de IGDB (fuente de los metadatos).
+              // La clasificación por edad ya se muestra en la cabecera, no aquí.
+              const enlaces = [
+                ...(fx?.url_igdb ? [{ etiqueta: "IGDB", url: fx.url_igdb }] : []),
+                ...(fx?.enlaces ?? []),
+              ];
+              const hayExtra =
+                fx?.lanzamientos?.length || fx?.idiomas_soporte?.length || enlaces.length;
+              if (!hayExtra) return null;
+              return (
+                <div class="mt-8 grid gap-6 lg:grid-cols-2">
+                  {fx?.lanzamientos?.length ? (
+                    <div class="rounded-xl border border-zinc-200 bg-white p-5">
+                      <h2 class="text-base font-semibold text-zinc-100">Lanzamientos</h2>
+                      <ul class="mt-3 max-h-72 divide-y divide-[#E5E5E5] overflow-auto text-sm">
+                        {fx.lanzamientos.map((l: any) => (
+                          <li class="flex items-center justify-between gap-3 py-1.5">
+                            <span class="font-medium text-zinc-200">{l.plataforma}</span>
+                            <span class="text-right text-zinc-500">{l.humano || l.fecha}{l.region ? ` · ${l.region}` : ""}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  {fx?.idiomas_soporte?.length ? (
+                    <div class="rounded-xl border border-zinc-200 bg-white p-5">
+                      <h2 class="text-base font-semibold text-zinc-100">Idiomas soportados</h2>
+                      <div class="mt-3 flex flex-wrap gap-2 text-xs">
+                        {fx.idiomas_soporte.map((n: string) => (
+                          <span class="rounded-md bg-[#EFEFEF] px-2 py-1 text-zinc-600">{n}</span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {enlaces.length ? (
+                    <div class="rounded-xl border border-zinc-200 bg-white p-5">
+                      <h2 class="text-base font-semibold text-zinc-100">Enlaces</h2>
+                      <div class="mt-3 flex max-h-72 flex-wrap gap-2 overflow-auto text-xs">
+                        {enlaces.map((e: any) => (
+                          <a href={e.url} target="_blank" rel="noreferrer"
+                             title={e.etiqueta === "IGDB" ? "Ficha completa en IGDB" : e.url}
+                             class={e.etiqueta === "IGDB"
+                               ? "rounded-md bg-blue-600 px-2 py-1 font-medium text-white hover:bg-blue-500"
+                               : "rounded-md bg-blue-50 px-2 py-1 font-medium text-blue-700 hover:bg-blue-100"}>{e.etiqueta} ↗</a>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })()
+          }
+
+          {(ficha && (techRows.length > 0 || (ficha.videos?.length ?? 0) > 0)) && (
+            <div class="mt-8 grid gap-6 lg:grid-cols-2">
+              {techRows.length > 0 && (
+                <div class="rounded-xl border border-zinc-800/70 bg-zinc-900/30 p-5">
+                  <h2 class="text-base font-semibold text-zinc-100">Ficha técnica</h2>
+                  <dl class="mt-3 grid grid-cols-[minmax(0,9rem)_1fr] gap-x-4 gap-y-2 text-sm">
+                    {techRows.map(([k, v]) => (
+                      <>
+                        <dt class="text-zinc-500">{k}</dt>
+                        <dd class="text-zinc-200">{v}</dd>
+                      </>
+                    ))}
+                  </dl>
+                </div>
+              )}
+
+              {(ficha.videos?.length ?? 0) > 0 && (
+                <div class="rounded-xl border border-zinc-800/70 bg-zinc-900/30 p-5">
+                  <h2 class="text-base font-semibold text-zinc-100">Vídeos</h2>
+                  <div class="mt-3 grid gap-4">
+                    {ficha.videos.slice(0, 4).map((v: any) => (
+                      <div>
+                        <iframe class="aspect-video w-full rounded-lg border-0" src={`https://www.youtube-nocookie.com/embed/${v.video_id}`} title={v.nombre || "Vídeo"} loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+                        {v.nombre && <p class="mt-1 text-xs text-zinc-500">{v.nombre}</p>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {(ficha.capturas?.length ?? 0) > 0 && (
+            <section class="mt-8">
+              <h2 class="text-base font-semibold text-zinc-100">Capturas de pantalla</h2>
+              <div class="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3">
+                {ficha.capturas.slice(0, 9).map((url: string) => (
+                  <a href={url} target="_blank" rel="noreferrer"><img src={url} alt="Captura" loading="lazy" decoding="async" class="aspect-video w-full rounded-lg object-cover opacity-90 transition hover:opacity-100" /></a>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {(ficha.similares?.length ?? 0) > 0 && (
+            <section class="mt-8">
+              <h2 class="text-base font-semibold text-zinc-100">Juegos similares</h2>
+              <div class="mt-3 grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
+                {ficha.similares.slice(0, 12).map((s: any) => (
+                  <a href={`/game/${s.slug}/`} class="group block">
+                    <div class="relative aspect-2/3 overflow-hidden rounded-lg bg-zinc-800">
+                      {s.caratula && <img src={s.caratula} alt={s.nombre} loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" onerror="this.style.display='none'" />}
+                      <span class="absolute inset-0 flex items-end bg-linear-to-t from-black/60 to-transparent p-2 text-xs text-white opacity-90 group-hover:opacity-100">{s.nombre}</span>
+                    </div>
+                  </a>
+                ))}
+              </div>
+            </section>
+          )}
+        </>
+      )
+    }

@@ -19,10 +19,30 @@ export interface SnapshotOut {
   total_size: number;
 }
 
+/**
+ * Sistema/plataforma OFICIAL de un bucket del catálogo (ver `app.plataformas`).
+ *
+ * `letter` sigue siendo la identidad del bucket en el volcado (la letra A-Z en
+ * Switch, el sistema `ARC N-64` en retro): esto es cómo se llama de verdad esa
+ * plataforma. `conocido=false` avisa de un código del volcado que todavía no
+ * está en el catálogo oficial (se publica tal cual, sin inventar nombres).
+ */
+export interface PlataformaOut {
+  clave: string;
+  nombre: string;
+  corto: string;
+  igdb_id: number | null;
+  igdb_slug: string | null;
+  generacion: number | null;
+  familia: string | null;
+  conocido: boolean;
+}
+
 export interface BucketOut {
   letter: string;
   titles: number;
   size_bytes: number;
+  plataforma?: PlataformaOut | null;
 }
 
 export interface MetaOut {
@@ -39,6 +59,8 @@ export interface CardGame {
   slug: string;
   name: string;
   letter: string;
+  /** Sistema/plataforma OFICIAL del bucket (Switch también lo publica). */
+  plataforma?: PlataformaOut | null;
   size_bytes: number;
   file_count: number;
   base_count: number;
@@ -46,6 +68,10 @@ export interface CardGame {
   dlc_count: number;
   ext_json: string | null;
   igdb_cover: string | null;
+  /** Nombre OFICIAL que IGDB da al juego (`name` es el fichero/carpeta real). */
+  igdb_name?: string | null;
+  /** Año del lanzamiento original según IGDB (si la ficha lo trae). */
+  igdb_year?: number | null;
 }
 
 export interface TitleSummary extends CardGame {
@@ -85,6 +111,8 @@ export interface TitleDetailOut {
   name: string;
   name_norm: string;
   letter: string;
+  /** Sistema/plataforma OFICIAL del bucket (`letter` es el código del volcado). */
+  plataforma?: PlataformaOut | null;
   size_bytes: number;
   file_count: number;
   folder_count: number;
@@ -94,6 +122,8 @@ export interface TitleDetailOut {
   formats: string[];
   igdb_slug: string | null;
   igdb_cover: string | null;
+  igdb_name?: string | null;
+  igdb_year?: number | null;
   ficha?: Record<string, any> | null;
   versions: VersionOut[];
   remaining_files: FileOut[];
@@ -214,6 +244,43 @@ export interface NovedadesParams {
   limit?: number;
 }
 
+/**
+ * Colección RETRO (ROMs): catálogo APARTE del de Switch, con su propia BD y su
+ * propio volcado. `sistema` es la PLATAFORMA del juego y acepta su clave
+ * canónica (`mega-drive`), su nombre oficial (`Sega Mega Drive/Genesis`) o el
+ * código del volcado (`ARC S3G4-Mega Drive-G3N3S1S`, que es lo que acaba en el
+ * `letter` del backend): el backend los traduce todos con `app.plataformas`.
+ */
+export interface RetroStatusOut {
+  disponible: boolean;
+  snapshot: SnapshotOut | null;
+  juegos: number;
+  sistemas: number;
+  volcado: string;
+  volcado_existe: boolean;
+  volcado_generated_at: string | null;
+  volcado_fuente: string | null;
+  volcado_age_hours: number | null;
+  volcado_max_edad_horas: number;
+  volcado_obsoleto: boolean;
+  /** Progreso del enriquecimiento IGDB de esta colección (worker `backend-retro-enrich`). */
+  caratulas: number;
+  enriquecidos: number;
+  pendientes_enrich: number;
+  sin_match: number;
+  /** Títulos con el nombre canónico de IGDB resuelto. */
+  con_nombre_oficial: number;
+  aviso: string | null;
+}
+
+export interface RetroParams {
+  q?: string;
+  sistema?: string;
+  sort?: "canonico" | "name" | "year" | "size" | "files";
+  offset?: number;
+  limit?: number;
+}
+
 export const api = {
   meta: () => getJSON<MetaOut>("/api/meta"),
   syncStatus: () => getJSON<SyncStatusOut>("/api/sync/status"),
@@ -236,4 +303,19 @@ export const api = {
     if (params.limit !== undefined) sp.set("limit", String(params.limit));
     return getJSON<NovedadesOut>(`/api/novedades?${sp.toString()}`);
   },
+  // ── Sección RETRO (ROMs), aparte de la biblioteca de Switch ──
+  retroMeta: () => getJSON<MetaOut>("/api/retro/meta"),
+  retroSistemas: () => getJSON<BucketOut[]>("/api/retro/sistemas"),
+  retroStatus: () => getJSON<RetroStatusOut>("/api/retro/status"),
+  retroTitles: (params: RetroParams = {}) => {
+    const sp = new URLSearchParams();
+    if (params.q) sp.set("q", params.q);
+    if (params.sistema) sp.set("sistema", params.sistema);
+    if (params.sort) sp.set("sort", params.sort);
+    if (params.offset !== undefined) sp.set("offset", String(params.offset));
+    if (params.limit !== undefined) sp.set("limit", String(params.limit));
+    return getJSON<TitleListOut>(`/api/retro/titles?${sp.toString()}`);
+  },
+  retroTitle: (slug: string) =>
+    getJSON<TitleDetailOut>(`/api/retro/titles/${encodeURIComponent(slug)}`),
 };
