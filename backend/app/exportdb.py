@@ -25,7 +25,9 @@ from .db import build_engine, create_schema
 from .ingest import classify_version
 from .library import current_snapshot
 from .models import Node, Snapshot, Title
+from .plataformas import de_letra
 from .safefs import atomic_write_text
+from .schemas import PlataformaOut
 
 # Type aliases para mejorar la legibilidad
 GameDict: TypeAlias = dict[str, Any]
@@ -134,7 +136,15 @@ def _build(title: Title, node: Node | None, hijos: dict[int | None, list[Node]])
     return {
         "slug": title.slug,
         "nombre": title.name,
+        # Identidad CANÓNICA de IGDB: `nombre` es el fichero/carpeta real (la ROM)
+        # y esto, cómo se llama el juego oficialmente.
+        "nombre_oficial": title.igdb_name,
+        "anio": title.igdb_year,
         "letra": title.letter,
+        # Sistema/plataforma OFICIAL del bucket: en Switch la letra A-Z no dice
+        # nada, y en retro el código del volcado (`ARC N-W!!`) tampoco. Misma
+        # forma que publica la API (`schemas.PlataformaOut`).
+        "plataforma": PlataformaOut.model_validate(de_letra(title.letter)).model_dump(),
         "tamano_bytes": title.size_bytes,
         "num_archivos": title.file_count,
         "num_carpetas": title.folder_count,

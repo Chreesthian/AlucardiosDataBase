@@ -70,6 +70,16 @@ def test_export_estructura_por_versiones(client, tmp_path):
     assert [f["nombre"] for f in versiones["D-LC"]["contenido"]] == ["game1.dlc1.part1.rar"]
 
 
+def test_export_incluye_la_plataforma_oficial(client, tmp_path):
+    """Cada juego exportado publica su sistema/plataforma, no la letra del volcado."""
+    data = _exportar(client.app, tmp_path / "plataforma.json")
+    juego = {g["nombre"]: g for g in data["juegos"]}["A Game One"]
+    assert juego["letra"] == "A"  # la identidad del volcado se conserva
+    assert juego["plataforma"]["clave"] == "nintendo-switch"
+    assert juego["plataforma"]["nombre"] == "Nintendo Switch"
+    assert juego["plataforma"]["igdb_id"] == 130
+
+
 def test_export_desciende_subcarpetas_de_version(tmp_path):
     app = build_app(tmp_path, text=DUMP_ANIDADO)
     data = _exportar(app, tmp_path / "anidado.json")

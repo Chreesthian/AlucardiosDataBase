@@ -3,12 +3,38 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Self
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
+
+from .plataformas import de_letra
 
 
 class OrmModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+
+
+# ── plataformas (sistemas) ───────────────────────────────────
+class PlataformaOut(BaseModel):
+    """Plataforma/sistema OFICIAL del juego (no el código del volcado).
+
+    `letter` sigue siendo la identidad del bucket en el volcado (la letra A-Z en
+    Switch, el sistema `ARC N-64` en retro); esto es cómo se llama de verdad esa
+    plataforma. Los datos vienen del catálogo `/v4/platforms` de IGDB
+    (`app.plataformas`) y `conocido=False` avisa de un código del volcado que
+    todavía no está en el catálogo: se publica tal cual, nunca se inventa.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    clave: str  # identificador estable (slug) para URLs y claves de UI
+    nombre: str  # nombre OFICIAL
+    corto: str  # etiqueta corta para chips y badges (UI densa)
+    igdb_id: int | None = None
+    igdb_slug: str | None = None
+    generacion: int | None = None
+    familia: str | None = None
+    conocido: bool = True
 
 
 # ── snapshots / meta ─────────────────────────────────────────
@@ -26,8 +52,26 @@ class SnapshotOut(OrmModel):
     total_size: int
 
 
-class BucketOut(BaseModel):
+class _ConPlataforma(BaseModel):
+    """Mixin de los payloads que identifican un bucket: añade su plataforma oficial.
+
+    `letter` es la identidad del bucket en el volcado (letra A-Z en Switch,
+    sistema `ARC N-64` en retro); `plataforma` es ese mismo bucket traducido al
+    nombre OFICIAL (`app.plataformas`). Se completa aquí, en un solo sitio, para
+    que ningún endpoint pueda publicar uno sin el otro.
+    """
+
     letter: str
+    plataforma: PlataformaOut | None = None
+
+    @model_validator(mode="after")
+    def _completar_plataforma(self) -> Self:
+        if self.plataforma is None:
+            self.plataforma = PlataformaOut.model_validate(de_letra(self.letter))
+        return self
+
+
+class BucketOut(_ConPlataforma):
     titles: int
     size_bytes: int
 
@@ -43,10 +87,9 @@ class MetaOut(BaseModel):
 
 
 # ── títulos ──────────────────────────────────────────────────
-class TitleSummary(OrmModel):
+class TitleSummary(_ConPlataforma, OrmModel):
     slug: str
     name: str
-    letter: str
     size_bytes: int
     file_count: int
     folder_count: int
@@ -57,6 +100,10 @@ class TitleSummary(OrmModel):
     ext_json: str | None
     igdb_slug: str | None
     igdb_cover: str | None
+    # Identidad OFICIAL que IGDB da al juego. `name` es el fichero/carpeta real
+    # (la ROM, p. ej. `After Burner.zip`); esto es cómo se llama el juego.
+    igdb_name: str | None = None
+    igdb_year: int | None = None
 
 
 class TitleListOut(BaseModel):
@@ -86,11 +133,10 @@ class VersionOut(BaseModel):
     files: list[FileOut]
 
 
-class TitleDetailOut(BaseModel):
+class TitleDetailOut(_ConPlataforma):
     slug: str
     name: str
     name_norm: str
-    letter: str
     size_bytes: int
     file_count: int
     folder_count: int
@@ -100,6 +146,9 @@ class TitleDetailOut(BaseModel):
     formats: list[str]
     igdb_slug: str | None
     igdb_cover: str | None
+    # Nombre canónico de IGDB y año del lanzamiento original (ver `TitleSummary`).
+    igdb_name: str | None = None
+    igdb_year: int | None = None
     ficha: dict | None = None  # ficha IGDB completa (ficha_v 2), si está enriquecido
     versions: list[VersionOut]
     remaining_files: list[FileOut]  # archivos directos del título (sin versión)
@@ -179,3 +228,33 @@ class SyncRunOut(BaseModel):
     snapshot: SnapshotOut | None = None
     resumen: dict | None = None
     error: str | None = None
+
+
+# ── retro (sección aparte) ───────────────────────────────────
+class RetroStatusOut(BaseModel):
+    """Frescura de la colección retro (ROMs), que vive en SU PROPIA BD/volcado.
+
+    Igual que el catálogo de Switch, la sección retro puede quedarse congelada en
+    silencio si el refresco automático se rompe: la UI debe poder avisarlo.
+    """
+
+    disponible: bool = False  # hay snapshot retro en su BD
+    snapshot: SnapshotOut | None = None
+    juegos: int = 0
+    sistemas: int = 0
+    volcado: str
+    volcado_existe: bool
+    volcado_generated_at: str | None = None
+    volcado_fuente: str | None = None  # in-share de las ROMs (estable entre cuentas)
+    volcado_age_hours: float | None = None
+    volcado_max_edad_horas: int = 0
+    volcado_obsoleto: bool = False
+    # Progreso del enriquecimiento IGDB de ESTA colección (lo lleva el worker
+    # `backend-retro-enrich`, ver `app.enrich --coleccion retro`): la UI puede
+    # enseñar cuánto falta sin mirar el catálogo de Switch.
+    caratulas: int = 0  # títulos con portada IGDB
+    enriquecidos: int = 0  # títulos con ficha IGDB COMPLETA (ficha_v 2)
+    pendientes_enrich: int = 0  # sin match todavía o solo con ficha básica v1
+    sin_match: int = 0  # probados y sin equivalencia en IGDB (miss)
+    con_nombre_oficial: int = 0  # títulos con el nombre canónico de IGDB resuelto
+    aviso: str | None = None

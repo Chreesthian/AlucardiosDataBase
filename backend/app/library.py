@@ -7,11 +7,13 @@ trabajan sobre esa fotografía inmutable (historial futuro en F1).
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .models import Node, Snapshot, Title
+from .plataformas import de_letra
 
 LETTER_ORDER = {c: i for i, c in enumerate("#0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ")}
 
@@ -26,14 +28,30 @@ def _like_escaped(prefix: str) -> str:
     return prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def list_buckets(session: Session, snapshot_id: int) -> list[dict]:
+def list_buckets(
+    session: Session, snapshot_id: int, *, orden_alfabetico: bool = False
+) -> list[dict]:
+    """Buckets de la colección con su recuento de títulos y su plataforma oficial.
+
+    En Switch el bucket es la LETRA (`#`, `A`…`Z`) y se ordena como el abecedario
+    de la UI. En la colección retro el bucket es el SISTEMA (`ARC N-64`,
+    `ARC Mame2003`…) y se ordena por el NOMBRE OFICIAL de la plataforma
+    (`orden_alfabetico`); `plataforma` es ese nombre, traducido en
+    `app.plataformas` (el código del volcado nunca se publica tal cual).
+    """
     rows = session.execute(
         select(Title.letter, func.count(Title.id), func.sum(Title.size_bytes))
         .where(Title.snapshot_id == snapshot_id)
         .group_by(Title.letter)
     ).all()
-    buckets = [{"letter": letra, "titles": n, "size_bytes": s or 0} for letra, n, s in rows]
-    buckets.sort(key=lambda b: LETTER_ORDER.get(b["letter"], 99))
+    buckets = [
+        {"letter": letra, "titles": n, "size_bytes": s or 0, "plataforma": de_letra(letra)}
+        for letra, n, s in rows
+    ]
+    if orden_alfabetico:
+        buckets.sort(key=lambda b: (b["plataforma"].nombre.casefold(), b["letter"].casefold()))
+    else:
+        buckets.sort(key=lambda b: LETTER_ORDER.get(b["letter"], 99))
     return buckets
 
 
@@ -63,20 +81,41 @@ def list_titles(
     *,
     q: str | None = None,
     letter: str | None = None,
+    letters: Sequence[str] | None = None,
     sort: str = "name",
     offset: int = 0,
     limit: int = 60,
+    letter_exact: bool = False,
 ) -> tuple[list[Title], int]:
+    """Títulos del snapshot, con filtro por bucket (`letter`) o por plataforma.
+
+    En Switch `letter` es una letra (`A`, `#`…) y se normaliza a mayúsculas; en la
+    colección retro es el NOMBRE del sistema (`ARC Mame2003`), así que el router
+    retro pasa `letter_exact=True` para respetar el nombre tal cual. Como un
+    sistema del volcado puede llamarse de varias formas (`letters`, resueltas con
+    `app.plataformas.etiquetas_de`), el filtro por plataforma es un `IN`.
+    """
     stmt = select(Title).where(Title.snapshot_id == snapshot_id)
     count_stmt = select(func.count(Title.id)).where(Title.snapshot_id == snapshot_id)
 
+    if letters:
+        etiquetas = list(letters)
+        stmt = stmt.where(Title.letter.in_(etiquetas))
+        count_stmt = count_stmt.where(Title.letter.in_(etiquetas))
     if letter:
-        letter = letter.upper()
-        stmt = stmt.where(Title.letter == letter)
-        count_stmt = count_stmt.where(Title.letter == letter)
+        letra = letter if letter_exact else letter.upper()
+        stmt = stmt.where(Title.letter == letra)
+        count_stmt = count_stmt.where(Title.letter == letra)
     if q and q.strip():
         needle = f"%{q.strip().lower()}%"
-        cond = Title.name_norm.like(needle) | Title.name.like(f"%{q.strip()}%")
+        cond = (
+            Title.name_norm.like(needle)
+            | Title.name.like(f"%{q.strip()}%")
+            # IGDB manda: el nombre OFICIAL también encuentra el título (así
+            # "After Burner" encuentra la ROM `After Burner.zip`). SQLite hace
+            # LIKE sin distinguir mayúsculas en ASCII, suficiente aquí.
+            | Title.igdb_name.like(f"%{q.strip()}%")
+        )
         stmt = stmt.where(cond)
         count_stmt = count_stmt.where(cond)
 
@@ -88,6 +127,13 @@ def list_titles(
         stmt = stmt.order_by(Title.file_count.desc())
     elif sort == "newest":
         stmt = stmt.order_by(Title.id.desc())
+    elif sort == "canonico":
+        # Alfabeto del NOMBRE OFICIAL de IGDB; las filas sin match caen a su
+        # nombre real para no dejar huecos al final de la lista.
+        stmt = stmt.order_by(func.coalesce(Title.igdb_name_norm, Title.name_norm).asc())
+    elif sort == "year":
+        # Más antiguo primero (catálogo "de época"); sin año, al final.
+        stmt = stmt.order_by(func.coalesce(Title.igdb_year, 9999).asc())
     else:  # name: #A…Z y luego alfabético
         stmt = stmt.order_by(Title.name_norm.asc())
 
@@ -115,6 +161,22 @@ def title_detail(session: Session, snapshot_id: int, slug: str) -> tuple[Title |
     node = get_title_node(session, snapshot_id, title.node_id)
     if node is None:
         return title, None
+
+    if node.kind == "file":
+        # Colección retro: hay juegos que son un ARCHIVO suelto (MAME, Atari…).
+        # No hay versiones: el propio archivo es todo el contenido.
+        return title, {
+            "versions": [],
+            "remaining_files": [
+                {
+                    "name": node.name,
+                    "size": node.size,
+                    "ext": node.ext,
+                    "path": node.name,
+                    "full_path": node.path,
+                }
+            ],
+        }
 
     # Subárbol del título (todas las profundidades), en orden de documento.
     like = _like_escaped(node.path) + "/%"
