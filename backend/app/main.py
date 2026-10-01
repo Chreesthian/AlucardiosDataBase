@@ -16,20 +16,28 @@ from . import __version__
 from .config import Settings
 from .config import settings as default_settings
 from .db import build_engine, create_schema
-from .routers import catalog, download, enrich, health, library, novedades, sync
+from .routers import catalog, download, enrich, health, library, novedades, retro, sync
 
 
 def create_app(settings_: Settings | None = None) -> FastAPI:
     cfg = settings_ or default_settings
     database_url = cfg.resolved_database_url
+    # La colección retro (ROMs) vive en SU PROPIA BD: así el catálogo de Switch no
+    # se contamina ni comparte snapshots/novedades con una biblioteca que rota por
+    # otra cuenta del pool (ver `app.ingest`).
+    retro_url = cfg.resolved_retro_database_url
 
     create_schema(database_url)
     engine = build_engine(database_url)
     session_factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    create_schema(retro_url)
+    engine_retro = build_engine(retro_url)
+    session_factory_retro = sessionmaker(bind=engine_retro, autoflush=False, expire_on_commit=False)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         create_schema(database_url)
+        create_schema(retro_url)
         yield
 
     app = FastAPI(
@@ -40,6 +48,9 @@ def create_app(settings_: Settings | None = None) -> FastAPI:
     app.state.database_url = database_url
     app.state.engine = engine
     app.state.session_factory = session_factory
+    app.state.retro_database_url = retro_url
+    app.state.engine_retro = engine_retro
+    app.state.session_factory_retro = session_factory_retro
     app.state.settings = cfg
 
     app.add_middleware(
@@ -62,6 +73,8 @@ def create_app(settings_: Settings | None = None) -> FastAPI:
     app.include_router(catalog.router)
     app.include_router(download.router)
     app.include_router(novedades.router)
+    # Sección aparte: ROMs retro (otra BD, otro volcado, otra cuenta del pool).
+    app.include_router(retro.router)
 
     @app.get("/")
     def root() -> dict:

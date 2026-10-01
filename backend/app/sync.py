@@ -38,7 +38,17 @@ from sqlalchemy.orm import Session
 
 from .config import settings
 from .db import build_engine, create_schema
-from .ingest import bucket_letter, classify_version, contar_titulos, ingest, is_bucket
+from .ingest import (
+    COLECCION_SWITCH,
+    COLECCIONES,
+    bucket_letter,
+    classify_version,
+    contar_titulos,
+    es_juego_retro,
+    es_retro,
+    ingest,
+    is_bucket,
+)
 from .models import DownloadLink, Node, Snapshot, SyncLog, Title
 from .normalize import normalize, slugify
 from .novedades import registrar_novedades
@@ -160,7 +170,8 @@ def _remapear_prefijo(session: Session, sid: int, viejo: str, nuevo: str) -> Non
     # Restos de una rotación previa a medio aplicar (evita chocar con el índice único).
     session.execute(
         delete(DownloadLink).where(
-            DownloadLink.snapshot_id == sid, DownloadLink.path.startswith(nuevo + "/", autoescape=True)
+            DownloadLink.snapshot_id == sid,
+            DownloadLink.path.startswith(nuevo + "/", autoescape=True),
         )
     )
     for modelo in (Node, DownloadLink):
@@ -179,7 +190,10 @@ def _remapear_prefijo(session: Session, sid: int, viejo: str, nuevo: str) -> Non
     )
     session.execute(
         update(DownloadLink)
-        .where(DownloadLink.snapshot_id == sid, DownloadLink.path.startswith(nuevo + "/", autoescape=True))
+        .where(
+            DownloadLink.snapshot_id == sid,
+            DownloadLink.path.startswith(nuevo + "/", autoescape=True),
+        )
         .values(estado="pendiente", link=None, error=None, generado_en=None)
     )
 
@@ -193,6 +207,7 @@ def refresh(
     allow_empty: bool = False,
     min_fraccion: float = 0.5,
     min_titulos_fraccion: float | None = None,
+    coleccion: str = COLECCION_SWITCH,
 ) -> dict:
     """Actualiza la BD por diferencias. Devuelve resumen del escaneo.
 
@@ -216,6 +231,10 @@ def refresh(
     (`total_files`/`total_folders` y el snapshot) describen el catálogo; los del
     volcado crudo van en `total_files_volcado`/`total_folders_volcado`. Los tres
     blindajes se evalúan contra la biblioteca del volcado nuevo.
+
+    `coleccion` (`switch` | `retro`) decide cómo se interpretan los niveles (ver
+    `app.ingest`). Cada colección vive en SU PROPIA BD: esta función nunca mezcla
+    catálogos porque solo trabaja contra el `engine` que recibe.
     """
     if min_titulos_fraccion is None:
         min_titulos_fraccion = settings.sync_min_titulos_fraccion
@@ -254,7 +273,13 @@ def refresh(
 
         if snap is None:
             # Primera vez: ingesta completa (bootstrap), no hay nada que destruir.
-            ingest(engine, parsed, source_kind=kind, source_path=source_path)
+            ingest(
+                engine,
+                parsed,
+                source_kind=kind,
+                source_path=source_path,
+                coleccion=coleccion,
+            )
             stats["bootstrap"] = True
             stats["added_files"] = totales["files"]
             stats["added_folders"] = totales["folders"]
@@ -308,7 +333,7 @@ def refresh(
         # arriba no lo ve— y sin embargo borraría juegos del catálogo. Los títulos
         # se cuentan con la misma definición que la ingesta (`role_of`).
         actuales_titulos = sum(1 for r in filas if r.role == "title")
-        titulos_nuevos = contar_titulos(parsed, sectores=biblioteca)
+        titulos_nuevos = contar_titulos(parsed, sectores=biblioteca, coleccion=coleccion)
         if (
             actuales_titulos
             and min_titulos_fraccion > 0
@@ -377,7 +402,7 @@ def refresh(
                 stats["changed_files"] += 1
 
         # 4) Estado derivado (agregados/roles/títulos) sobre el árbol final.
-        _recalcular(session, sid)
+        _recalcular(session, sid, coleccion)
         # 5) Novedades (sección "Novedades"): juegos nuevos y contenido nuevo.
         #    El flush previo garantiza que los títulos recién creados ya tienen
         #    id/slug para asociar los eventos.
@@ -415,24 +440,49 @@ def refresh(
     return stats
 
 
-def _rol_hijo(parent_role: str | None, nombre: str, kind: str) -> str:
+def _rol_hijo(
+    parent_role: str | None,
+    row: Node,
+    subhijos: list[Node],
+    coleccion: str = COLECCION_SWITCH,
+) -> str:
+    """Rol del nodo en la colección (misma semántica que `app.ingest.role_of`).
+
+    `subhijos` es la lista de hijos directos del nodo (vacía para archivos): la
+    colección retro necesita verla para distinguir un juego de un contenedor
+    (carpeta-letra `B/`, `#/`).
+    """
     if parent_role is None:
         return "root"
     if parent_role == "root":
-        return "bucket" if is_bucket(nombre) else ""
-    if parent_role == "bucket":
-        return "title" if kind == "folder" else ""
+        if es_retro(coleccion):
+            return "bucket" if row.kind == "folder" else ""
+        return "bucket" if is_bucket(row.name, coleccion) else ""
+    if parent_role in ("bucket", "group"):
+        if es_retro(coleccion):
+            return (
+                "title"
+                if es_juego_retro(
+                    nombre=row.name,
+                    is_folder=row.kind == "folder",
+                    tiene_archivos_directos=any(h.kind == "file" for h in subhijos),
+                    nombres_subcarpetas=[h.name for h in subhijos if h.kind == "folder"],
+                )
+                else "group"
+            )
+        return "title" if (parent_role == "bucket" and row.kind == "folder") else ""
     if parent_role == "title":
-        return "version" if kind == "folder" else ""
+        return "version" if row.kind == "folder" else ""
     return ""
 
 
-def _recalcular(session: Session, sid: int) -> None:
+def _recalcular(session: Session, sid: int, coleccion: str = COLECCION_SWITCH) -> None:
     """Reasigna roles y agregados y refresca títulos derivados (en sitio).
 
     Solo sobreescribe lo derivado: los títulos que persisten conservan su
     `igdb_slug/igdb_cover/igdb_json`; los nuevos se crean; los eliminados se
-    borran (ya cascadearon al quitar su nodo).
+    borran (ya cascadearon al quitar su nodo). En la colección retro un título
+    también puede ser un ARCHIVO suelto (MAME/Atari), que se materializa igual.
     """
     nodos = list(session.execute(select(Node).where(Node.snapshot_id == sid)).scalars())
     hijos: dict[int, list[Node]] = defaultdict(list)
@@ -456,10 +506,62 @@ def _recalcular(session: Session, sid: int) -> None:
         usados.add(slug)
         return slug
 
+    def _upsert_title(
+        row: Node,
+        *,
+        size: int,
+        files: int,
+        folders: int,
+        versiones: Counter,
+        ext_sum: Counter,
+        letra: str,
+    ) -> None:
+        """Crea o refresca el `Title` del nodo (conserva el IGDB si ya existía)."""
+        titulos_vivos.add(row.id)
+        ext_json = json.dumps(dict(ext_sum), ensure_ascii=False)
+        t = titulos.get(row.id)
+        if t is None:
+            session.add(
+                Title(
+                    snapshot_id=sid,
+                    node_id=row.id,
+                    slug=_nuevo_slug(row.name),
+                    name=row.name,
+                    name_norm=normalize(row.name),
+                    letter=letra,
+                    size_bytes=size,
+                    file_count=files,
+                    folder_count=folders,
+                    base_count=versiones["base"],
+                    update_count=versiones["update"],
+                    dlc_count=versiones["dlc"],
+                    other_count=versiones["other"],
+                    ext_json=ext_json,
+                )
+            )
+        else:
+            # Conserva igdb_*; refresca solo lo derivado del árbol.
+            t.size_bytes, t.file_count, t.folder_count = size, files, folders
+            t.base_count, t.update_count = versiones["base"], versiones["update"]
+            t.dlc_count, t.other_count = versiones["dlc"], versiones["other"]
+            t.ext_json = ext_json
+
     def walk(row: Node, parent_role: str | None, letra_bucket: str):
-        role = _rol_hijo(parent_role, row.name, row.kind)
-        row.role = role if row.kind == "folder" else ""
+        role = _rol_hijo(parent_role, row, hijos.get(row.id, []), coleccion)
+        # Un archivo solo puede llevar rol "title" en la colección retro
+        # (MAME/Atari: un .zip por juego); en Switch los roles son de carpeta.
+        row.role = role if (row.kind == "folder" or role == "title") else ""
         if row.kind != "folder":
+            if role == "title":
+                _upsert_title(
+                    row,
+                    size=row.size,
+                    files=1,
+                    folders=0,
+                    versiones=Counter(),
+                    ext_sum=Counter({row.ext: 1} if row.ext else {}),
+                    letra=letra_bucket,
+                )
             return row.size, 1, 0, Counter({row.ext: 1} if row.ext else {})
 
         size = files = folders = 0
@@ -472,14 +574,34 @@ def _recalcular(session: Session, sid: int) -> None:
                 if child.ext:
                     ext_sum[child.ext] += 1
                 child.total_size, child.total_files, child.total_folders = child.size, 1, 0
+                # Un archivo hijo de un juego retro también es un "título" cuando
+                # el padre NO es título (sistema o contenedor-letra).
+                if role in ("bucket", "group"):
+                    child_role = _rol_hijo(role, child, [], coleccion)
+                    child.role = child_role if child_role == "title" else ""
+                    if child_role == "title":
+                        _upsert_title(
+                            child,
+                            size=child.size,
+                            files=1,
+                            folders=0,
+                            versiones=Counter(),
+                            ext_sum=Counter({child.ext: 1} if child.ext else {}),
+                            letra=letra_bucket,
+                        )
                 continue
             letra_hijo = (
-                bucket_letter(row.name)
+                bucket_letter(row.name, coleccion)
                 if role == "bucket"
                 else (
-                    bucket_letter(child.name) if (role == "root" and is_bucket(child.name)) else ""
+                    bucket_letter(child.name, coleccion)
+                    if (role in ("root", "group") and is_bucket(child.name, coleccion))
+                    else ""
                 )
             )
+            if role == "group":
+                # Contenedor retro (carpeta-letra): el sistema manda como letra.
+                letra_hijo = letra_bucket
             s, f, d, ex = walk(child, role, letra_hijo)
             size += s
             files += f
@@ -491,34 +613,15 @@ def _recalcular(session: Session, sid: int) -> None:
         row.total_size, row.total_files, row.total_folders = size, files, folders
 
         if role == "title":
-            titulos_vivos.add(row.id)
-            ext_json = json.dumps(dict(ext_sum), ensure_ascii=False)
-            t = titulos.get(row.id)
-            if t is None:
-                session.add(
-                    Title(
-                        snapshot_id=sid,
-                        node_id=row.id,
-                        slug=_nuevo_slug(row.name),
-                        name=row.name,
-                        name_norm=normalize(row.name),
-                        letter=letra_bucket,
-                        size_bytes=size,
-                        file_count=files,
-                        folder_count=folders,
-                        base_count=versiones["base"],
-                        update_count=versiones["update"],
-                        dlc_count=versiones["dlc"],
-                        other_count=versiones["other"],
-                        ext_json=ext_json,
-                    )
-                )
-            else:
-                # Conserva igdb_*; refresca solo lo derivado del árbol.
-                t.size_bytes, t.file_count, t.folder_count = size, files, folders
-                t.base_count, t.update_count = versiones["base"], versiones["update"]
-                t.dlc_count, t.other_count = versiones["dlc"], versiones["other"]
-                t.ext_json = ext_json
+            _upsert_title(
+                row,
+                size=size,
+                files=files,
+                folders=folders,
+                versiones=versiones,
+                ext_sum=ext_sum,
+                letra=letra_bucket,
+            )
         return size, files, folders, ext_sum
 
     for r in nodos:
@@ -539,6 +642,7 @@ def refresh_file(
     allow_empty: bool = False,
     min_fraccion: float = 0.5,
     min_titulos_fraccion: float | None = None,
+    coleccion: str = COLECCION_SWITCH,
 ) -> dict:
     """Lee el volcado UNA sola vez (hash y parse del MISMO texto) y sincroniza."""
     texto = path.read_text(encoding="utf-8")
@@ -551,6 +655,7 @@ def refresh_file(
         allow_empty=allow_empty,
         min_fraccion=min_fraccion,
         min_titulos_fraccion=min_titulos_fraccion,
+        coleccion=coleccion,
     )
 
 
@@ -562,6 +667,7 @@ def refresh_text(
     allow_empty: bool = False,
     min_fraccion: float = 0.5,
     min_titulos_fraccion: float | None = None,
+    coleccion: str = COLECCION_SWITCH,
 ) -> dict:
     return refresh(
         engine,
@@ -571,6 +677,7 @@ def refresh_text(
         allow_empty=allow_empty,
         min_fraccion=min_fraccion,
         min_titulos_fraccion=min_titulos_fraccion,
+        coleccion=coleccion,
     )
 
 
@@ -601,10 +708,14 @@ def _huella(path: Path) -> str:
 # en CADA ciclo y, si está caducado, lo grita y sale con `EXIT_VOLCADO_OBSOLETO`
 # (Docker reinicia el worker → estado visible en `docker compose ps`).
 EXIT_VOLCADO_OBSOLETO = 3
-_RE_FECHA_VOLCADO = re.compile(r"^\s*Fecha de volcado\s*:\s*(\S+)\s*$", re.IGNORECASE | re.MULTILINE)
+_RE_FECHA_VOLCADO = re.compile(
+    r"^\s*Fecha de volcado\s*:\s*(\S+)\s*$", re.IGNORECASE | re.MULTILINE
+)
 # Los bloques SECTOR van al principio del volcado, pero el INSHARE real aparece
 # más abajo (línea ~42): se lee una ventana mayor para localizar la biblioteca.
-_RE_SECTOR_INSHARE = re.compile(r"^\s*SECTOR:\s*(INSHARE\s+\S+)\s*$", re.MULTILINE)
+# El nombre del compartido puede llevar ESPACIOS (`INSHARE dueño:ORTIK 90`), así
+# que la etiqueta se captura entera hasta el final de la línea.
+_RE_SECTOR_INSHARE = re.compile(r"^\s*SECTOR:\s*(INSHARE\s+.+?)\s*$", re.MULTILINE)
 _LINEAS_CABECERA = 40
 _LINEAS_FUENTE = 200
 
@@ -696,8 +807,20 @@ def comprobar_frescura(path: Path, max_edad_horas: int, *, tolerar: bool = False
     if tolerar:
         log.error("%s (se continúa: --seguir-si-obsoleto)", mensaje)
         return 0
-    log.critical("%s Se aborta el vigía (rc=%s) para que el fallo sea visible.", mensaje, EXIT_VOLCADO_OBSOLETO)
+    log.critical(
+        "%s Se aborta el vigía (rc=%s) para que el fallo sea visible.",
+        mensaje,
+        EXIT_VOLCADO_OBSOLETO,
+    )
     return EXIT_VOLCADO_OBSOLETO
+
+
+def _dir_datos(engine) -> Path:
+    """Directorio donde viven los ficheros de la BD (para los exports JSON)."""
+    base = getattr(getattr(engine, "url", None), "database", None)
+    if base:
+        return Path(str(base)).expanduser().parent
+    return Path(settings.resolved_db_path).parent
 
 
 def _una_pasada(
@@ -707,10 +830,14 @@ def _una_pasada(
     allow_vacio: bool = False,
     min_fraccion: float = 0.5,
     min_titulos_fraccion: float | None = None,
+    coleccion: str = COLECCION_SWITCH,
 ) -> dict:
     info = frescura(path)
     edad = "?" if info["edad_horas"] is None else f"{info['edad_horas']:.1f}"
-    print(f"Volcado: {info['generated_at'] or 'sin cabecera'} (hace {edad} h, origen={info['origen']})")
+    print(
+        f"Colección: {coleccion} · volcado: {info['generated_at'] or 'sin cabecera'} "
+        f"(hace {edad} h, origen={info['origen']})"
+    )
     stats = refresh_file(
         engine,
         path,
@@ -718,6 +845,7 @@ def _una_pasada(
         allow_empty=allow_vacio,
         min_fraccion=min_fraccion,
         min_titulos_fraccion=min_titulos_fraccion,
+        coleccion=coleccion,
     )
     print(
         f"[{stats['kind']}] bootstrap={stats['bootstrap']} | "
@@ -742,7 +870,10 @@ def _una_pasada(
     if exportar:
         from .exportdb import export
 
-        destino = Path(settings.resolved_db_path).parent / "biblioteca.json"
+        # Cada colección exporta a SU fichero: `biblioteca.json` es el del catálogo
+        # Switch y no debe pisarse con la colección retro (ni al revés).
+        nombre = "biblioteca_retro.json" if es_retro(coleccion) else "biblioteca.json"
+        destino = _dir_datos(engine) / nombre
         meta = export(engine, out=destino)
         print(f"Exportado a {destino} (juegos={meta['total_juegos']})")
     return stats
@@ -759,6 +890,13 @@ def main() -> None:
         help="Ruta al volcado .txt (o volcado MEGAcmd actual)",
     )
     ap.add_argument("--db", default=None, help="Ruta SQLite")
+    ap.add_argument(
+        "--coleccion",
+        default=COLECCION_SWITCH,
+        choices=list(COLECCIONES),
+        help="switch (biblioteca de juegos) o retro (ROMs, OTRA BD; ver "
+        "ALUCARD_RETRO_DB_PATH). Cada colección se indexa en su propia BD.",
+    )
     ap.add_argument(
         "--export", action="store_true", help="Regenera data/biblioteca.json tras sincronizar"
     )
@@ -829,12 +967,13 @@ def main() -> None:
             args.allow_vacio,
             args.min_fraccion,
             args.min_titulos_fraccion,
+            args.coleccion,
         )
         return
 
     # ── Modo daemon autónomo: espera a que el volcado cambie en disco. ──
     print(
-        f"[sync-watch] vigilando {path} cada {args.interval}s "
+        f"[sync-watch:{args.coleccion}] vigilando {path} cada {args.interval}s "
         f"(frescura máx. {args.max_edad} h; primer escaneo inmediato). "
         "Detén con señal/Ctrl+C."
     )
@@ -847,9 +986,7 @@ def main() -> None:
             else:
                 # Sin fuente fresca no tiene sentido mirar el hash: se falla
                 # rápido y ruidoso para que el pipeline parado se vea.
-                rc = comprobar_frescura(
-                    path, args.max_edad, tolerar=args.seguir_si_obsoleto
-                )
+                rc = comprobar_frescura(path, args.max_edad, tolerar=args.seguir_si_obsoleto)
                 if rc:
                     raise SystemExit(rc)
                 huella = _huella(path)
@@ -862,6 +999,7 @@ def main() -> None:
                         args.allow_vacio,
                         args.min_fraccion,
                         args.min_titulos_fraccion,
+                        args.coleccion,
                     )
                 else:
                     log.info(

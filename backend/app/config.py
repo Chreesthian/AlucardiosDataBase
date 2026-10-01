@@ -38,6 +38,18 @@ class Settings(BaseSettings):
     database_url: str | None = None
     db_path: Path | None = None
 
+    # ── Colección RETRO (sección aparte, F6) ───────────────
+    # Las ROMs retro viven en OTRO in-share (`INSHARE ...:ORTIK 90`, montado por
+    # otra cuenta del pool) y se indexan en SU PROPIA BD: mezclarlas con el
+    # catálogo Switch contaminaría `/api/meta`, los buckets y "Novedades" (los
+    # sectores de un volcado no son los del otro, cada uno rota por su cuenta).
+    # Por defecto: `data/mega_retro_contenido_MEGAcmd.txt` + `data/retro.db`.
+    # El volcado vive en `data/` (no en la raíz) para que el bind-mount de Docker
+    # monte un DIRECTORIO existente y nunca cree un directorio con su nombre.
+    retro_dump_path: Path | None = None
+    retro_database_url: str | None = None
+    retro_db_path: Path | None = None
+
     # ── API ────────────────────────────────────────────────
     api_host: str = "127.0.0.1"
     api_port: int = 7331
@@ -114,6 +126,29 @@ class Settings(BaseSettings):
         if self.database_url:
             return self.database_url
         db = self.resolved_db_path
+        db.parent.mkdir(parents=True, exist_ok=True)
+        return f"sqlite:///{db}"
+
+    # ── Derivados de la colección retro ────────────────────
+    @property
+    def resolved_retro_dump(self) -> Path:
+        if self.retro_dump_path is not None:
+            p = Path(self.retro_dump_path)
+            return p if p.is_absolute() else (project_root() / p).resolve()
+        return project_root() / "data" / "mega_retro_contenido_MEGAcmd.txt"
+
+    @property
+    def resolved_retro_db_path(self) -> Path:
+        if self.retro_db_path is not None:
+            p = Path(self.retro_db_path)
+            return p if p.is_absolute() else (project_root() / p).resolve()
+        return project_root() / "data" / "retro.db"
+
+    @property
+    def resolved_retro_database_url(self) -> str:
+        if self.retro_database_url:
+            return self.retro_database_url
+        db = self.resolved_retro_db_path
         db.parent.mkdir(parents=True, exist_ok=True)
         return f"sqlite:///{db}"
 

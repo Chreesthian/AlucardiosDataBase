@@ -21,6 +21,11 @@ services:
     environment:
       ALUCARD_DB_PATH: /data/alucard.db
       ALUCARD_DUMP_PATH: /dump/mega_cuenta_contenido_MEGAcmd.txt
+      # Colección RETRO (ROMs): OTRA BD y OTRO volcado (otro in-share, otra cuenta
+      # del pool). Se indexa y se sirve aparte para no contaminar el catálogo de
+      # Switch (ver `/api/retro/*` y `scripts/volcado_retro.sh`).
+      ALUCARD_RETRO_DB_PATH: /data/retro.db
+      ALUCARD_RETRO_DUMP_PATH: /dump-retro/mega_retro_contenido_MEGAcmd.txt
       ALUCARD_API_PORT: "7331"
       ALUCARD_CORS_ORIGINS: "http://localhost:${FRONTEND_PORT:-7330},http://127.0.0.1:${FRONTEND_PORT:-7330}"
       # Pre-vuelo de rotación: el host (`make volcado`) deja su veredicto en el
@@ -38,6 +43,14 @@ services:
       - type: bind
         source: ./data
         target: /estado
+        read_only: true
+      # El volcado de ROMs retro vive en `data/` (lo escribe el host con
+      # `scripts/volcado_retro.sh`): mismo directorio, otra ruta de solo lectura.
+      # Montar el DIRECTORIO evita que Docker cree un directorio con el nombre
+      # del fichero cuando aún no existe.
+      - type: bind
+        source: ./data
+        target: /dump-retro
         read_only: true
     ports:
       - "${BACKEND_PORT:-7331}:7331"
@@ -62,13 +75,49 @@ services:
     # Reutiliza la misma imagen/BD que la API; cada pasada es idempotente y
     # procesa automáticamente títulos nuevos o pendientes. Se reinicia solo si
     # cae (docker compose restart backend-enrich para forzar una pasada ya).
+    # `--concurrencia 4`: solapa las peticiones IGDB; el throttle del conector
+    # pacea los arranques (~3.3 req/s, bajo el límite de 4 req/s de IGDB).
     entrypoint: ["python", "-m", "app.enrich"]
-    command: ["--db", "/data/alucard.db", "--daemon", "--sleep", "60"]
+    command: ["--db", "/data/alucard.db", "--daemon", "--sleep", "60",
+              "--concurrencia", "4"]
     env_file:
       - path: ./backend/.env
         required: false
     environment:
       ALUCARD_DB_PATH: /data/alucard.db
+    volumes:
+      - alucard-data:/data
+    depends_on:
+      backend:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  backend-retro-enrich:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: alucard/backend:${ALUCARD_TAG:-latest}
+    init: true
+    restart: unless-stopped
+    # Worker supervisado de IGDB de la colección RETRO: misma maquinaria que
+    # `backend-enrich`, pero contra SU BD (`/data/retro.db`) y con
+    # `--coleccion retro`, que recorta el ruido de los nombres de ROM
+    # (`(USA)`, `(Rev 1)`, `.7z`…) antes de buscar en IGDB: sin eso media
+    # colección se quedaba sin carátula ni ficha. Los títulos nuevos que añada
+    # `backend-retro-sync` se enriquecen solos en la siguiente pasada.
+    # `--concurrencia 4`: solapa las peticiones (`progreso … títulos/min` en los
+    # logs) manteniendo el ritmo bajo el límite de 4 req/s de IGDB.
+    entrypoint: ["python", "-m", "app.enrich"]
+    command: ["--db", "/data/retro.db", "--coleccion", "retro",
+              "--daemon", "--sleep", "60", "--concurrencia", "4"]
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      ALUCARD_DB_PATH: /data/retro.db
+      ALUCARD_RETRO_DB_PATH: /data/retro.db
     volumes:
       - alucard-data:/data
     depends_on:
@@ -106,6 +155,44 @@ services:
       - type: bind
         source: ./mega_cuenta_contenido_MEGAcmd.txt
         target: /dump/mega_cuenta_contenido_MEGAcmd.txt
+        read_only: true
+    depends_on:
+      backend:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  backend-retro-sync:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: alucard/backend:${ALUCARD_TAG:-latest}
+    init: true
+    restart: unless-stopped
+    # Watcher de la colección RETRO (ROMs): vigila SU volcado (`data/mega_retro_…`)
+    # y aplica el diff en SU BD (`/data/retro.db`) sin tocar el catálogo de Switch.
+    # El refresco del volcado no puede hacerlo el contenedor (MEGAcmd vive en el
+    # host y la cuenta de las ROMs es otra del pool): lo orquesta
+    # `scripts/volcado_retro.sh` en el host, que además pide el escaneo por API.
+    # `--max-edad 26` mantiene la misma regla: si el volcado retro se queda
+    # caducado, este worker sale con rc=3 y el fallo se ve en `docker compose ps`.
+    entrypoint: ["python", "-m", "app.sync"]
+    command: ["--dump", "/dump-retro/mega_retro_contenido_MEGAcmd.txt",
+              "--db", "/data/retro.db", "--coleccion", "retro",
+              "--watch", "--interval", "300", "--max-edad", "26", "--export"]
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      ALUCARD_DB_PATH: /data/retro.db
+      ALUCARD_RETRO_DB_PATH: /data/retro.db
+      ALUCARD_RETRO_DUMP_PATH: /dump-retro/mega_retro_contenido_MEGAcmd.txt
+    volumes:
+      - alucard-data:/data
+      - type: bind
+        source: ./data
+        target: /dump-retro
         read_only: true
     depends_on:
       backend:

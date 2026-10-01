@@ -1,7 +1,18 @@
 # Makefile de AlucardiosDataBase
 SHELL := /bin/bash
 
-.PHONY: help build up down ps logs restart dev test lint clean volcado novedades pre-vuelo rotacion
+# El puerto del backend vive en `.env` (BACKEND_PORT=7441) y el Makefile no lo
+# carga solo: se resuelve aquí para que `make retro-sync`, `retro-status` y
+# `sync-status` apunten a donde escucha la API sin exportar nada a mano. Es la
+# misma resolución que usa `scripts/volcado_retro.sh`.
+BACKEND_PORT ?= $(shell grep -E '^BACKEND_PORT=' .env 2>/dev/null | tail -1 | cut -d= -f2 | tr -d '"'"'"' ')
+BACKEND_PORT := $(if $(strip $(BACKEND_PORT)),$(strip $(BACKEND_PORT)),7331)
+export BACKEND_PORT
+
+.PHONY: help build up down ps logs restart dev test lint clean volcado novedades pre-vuelo rotacion \
+	enrich enrich-retro enrich-campos enrich-retro-campos volcado-retro volcado-retro-cron \
+	volcado-retro-cron-off volcado-retro-estado \
+	retro-credenciales retro-status retro-sync
 
 help: ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
@@ -44,6 +55,15 @@ audit: ## Despliegue limpio + auditoría interna/externa
 enrich: ## Enriquece títulos con la ficha IGDB completa (GamesDb)
 	docker compose exec -T backend /app/.venv/bin/python -m app.enrich
 
+enrich-retro: ## Enriquece la colección RETRO con la ficha IGDB completa (SU BD)
+	docker compose exec -T backend /app/.venv/bin/python -m app.enrich --db /data/retro.db --coleccion retro
+
+enrich-campos: ## Pone al día nombre oficial/año y portadas SIN red (catálogo Switch)
+	docker compose exec -T backend /app/.venv/bin/python -m app.enrich --campos
+
+enrich-retro-campos: ## Pone al día nombre oficial/año y portadas SIN red (colección retro)
+	docker compose exec -T backend /app/.venv/bin/python -m app.enrich --db /data/retro.db --coleccion retro --campos
+
 volcado: ## Refresca el volcado canónico desde MEGA (requiere sesión MEGAcmd)
 	cd backend && uv run python ../scripts/refrescar_volcado.py
 
@@ -64,6 +84,27 @@ pre-vuelo: ## ¿La cuenta MEGA de la semana ve la biblioteca del volcado? (host,
 
 rotacion: ## Failover: deja la sesión en la cuenta del pool que SÍ ve la biblioteca
 	cd backend && uv run python ../scripts/verificar_rotacion.py --elegir-cuenta
+
+volcado-retro: ## Refresca el volcado de ROMs RETRO y escanea SU BD (host)
+	./scripts/volcado_retro.sh
+
+volcado-retro-cron: ## Instala el refresco automático del retro (cron cada 6 h)
+	./scripts/volcado_retro.sh --install-cron
+
+volcado-retro-cron-off: ## Quita el refresco automático del retro
+	./scripts/volcado_retro.sh --remove-cron
+
+volcado-retro-estado: ## Último resultado del refresco automático del retro
+	./scripts/volcado_retro.sh --estado
+
+retro-credenciales: ## Guarda la cuenta MEGA de la semana que ve las ROMs retro
+	./scripts/volcado_retro.sh --set-cred
+
+retro-status: ## Frescura y tamaño de la colección retro (API)
+	@curl -s "http://127.0.0.1:$${BACKEND_PORT:-7331}/api/retro/status" | python3 -m json.tool
+
+retro-sync: ## Escaneo manual del volcado retro en la API (su BD, no la de Switch)
+	@curl -s -X POST "http://127.0.0.1:$${BACKEND_PORT:-7331}/api/retro/dump" -H 'Content-Type: application/json' -d '{}' | python3 -m json.tool
 
 credenciales: ## Guarda las credenciales MEGA de la semana (rotan semanalmente)
 	./scripts/autovolcado.sh --set-cred
