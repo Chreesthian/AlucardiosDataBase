@@ -29,6 +29,9 @@ Alucardio brand, installable as a PWA.
   resumable cache (`mega-export`).
 - **Internal catalog.** Classifies the whole tree: sectors, per-letter
   folders, format families (RAR/NSP/NSZ...) and Base/Update/DLC roles.
+- **Separate retro catalog.** A second MEGA in-share with ROMs (arcade, consoles,
+  microcomputers) is indexed into its **own database** and served at `/retro` with
+  its own API, so it never mixes with the Switch library.
 - **Frontend.** SSR cover grid with search, letter chips, ordering and
   pagination; a rich game detail page; offline-ready PWA.
 - **Operational.** Docker Compose stack with supervised workers, atomic JSON
@@ -201,6 +204,87 @@ make credenciales     # stores this week's MEGA_EMAIL/MEGA_PASSWORD (chmod 600)
   only the real new files show up in "Novedades". Re-index the links against the
   new share with `./scripts/enlazar_descargas.sh` (host, resumable).
 
+## Retro collection (separate catalog)
+
+The MEGA account pool also carries a **second, unrelated library**: a retro ROM
+collection (arcade, consoles, microcomputers) living in **another in-share**,
+mounted by another account of the pool. It is served as a **separate section** so
+it can never contaminate the Switch catalog:
+
+- **Its own dump, its own database.** `data/mega_retro_contenido_MEGAcmd.txt` is
+  indexed into `data/retro.db` (`ALUCARD_RETRO_DUMP_PATH`,
+  `ALUCARD_RETRO_DB_PATH`), never into `data/alucard.db`: `/api/meta`,
+  `/api/titles` and `/novedades` keep describing only the Switch library.
+- **Its own API and page.** `/api/retro/meta|sistemas|titles|titles/{slug}|status`
+  plus `/retro` and `/retro/game/{slug}` (reusing `GameCard`).
+- **Same IGDB data as the Switch catalog.** ROM names carry dump noise
+  (`Tomb Raider (USA).7z`, `(Rev 1)`, `[!]`) that used to sink the matcher, so
+  `app.enrich` takes `--coleccion retro` and cleans them
+  (`igdb.titulo_para_igdb_rom`) before asking IGDB. The supervised worker
+  `backend-retro-enrich` (its own DB, `--coleccion retro`) fills covers, the
+  canonical IGDB name and the full sheet, and `/retro/game/{slug}` renders them
+  with the **same shared component** as the Switch game page
+  (`components/FichaIGDB.astro`). `GET /api/retro/status` publishes the progress
+  (`caratulas`, `enriquecidos`, `pendientes_enrich`, `sin_match`). The sweep is
+  parallelised (`--concurrencia`, default 4; the connector throttle paces the
+  starts to ~3.3 req/s, under IGDB's 4 req/s limit) and every pass logs its real
+  pace in titles/min, so a 10k backfill is observable with
+  `docker compose logs -f backend-retro-enrich`.
+- **A different tree shape.** Level 1 is the SYSTEM (`ARC N-64`, `ARC Mame2003`…)
+  and level 2 the games; a game can be a **loose file** (MAME/Atari `.zip`) or a
+  folder with its variants (`B-ASE`), and letter folders (`B/`, `#/`) are
+  containers, not games. `app.ingest` / `app.sync` implement this through
+  `--coleccion retro`.
+- **Systems are published by their OFFICIAL name.** That level-1 folder is a
+  hand-made dump code and it is the identity of the content in MEGA, so
+  `titles.letter` keeps it, but no catalog should show `ARC S3G4-Mega
+  Drive-G3N3S1S`: `app.plataformas` (a static catalog built from IGDB's
+  `/v4/platforms`) resolves every bucket at runtime to `nombre` / `corto` /
+  `igdb_id` / `igdb_slug` / `generacion` / `familia`, and every payload that
+  identifies a bucket adds a `plataforma` object next to the untouched `letter`
+  (`/api/retro/sistemas`, `/api/retro/titles`, `/api/retro/titles/{slug}`, the
+  JSON export and the Switch equivalents). `/retro` chips and badges read *N64*,
+  *Mega Drive*, *MAME*… and the `sistema` filter accepts the canonical key
+  (`mega-drive`), the official name or the legacy dump code, so old links keep
+  working. A code that is not in the catalog is shown as-is with
+  `conocido=False` (never invented) and the chip flags it; `Sega NAOMI`,
+  `Atomiswave` and `ScummVM` are published with `igdb_id=None` because IGDB does
+  not have them as platforms.
+- **The catalog is read by the OFFICIAL name.** IGDB's canonical title and
+  original release year live in their own columns (`igdb_name`,
+  `igdb_name_norm`, `igdb_year`) while the ROM file/folder name stays in `name`
+  — it is what identifies the content in MEGA. `/retro` is titled, searched
+  (`q=Three Wonders` finds `3wonders.zip`) and **sorted by it by default**
+  (`sort=canonico`; `sort=year` sorts by era), showing the ROM file underneath
+  the cover (cards, autosuggest, detail header and page `<title>`);
+  `GET /api/retro/status` adds `con_nombre_oficial`. Existing databases get the
+  columns automatically at startup (`app.db.migrar_esquema`) and
+  `make enrich-retro-campos` (or `make enrich-campos` for Switch) backfills them
+  from the sheets already stored, **without calling IGDB**.
+- **Refresh on the host (cron).** `scripts/volcado_retro.sh` (`make volcado-retro`)
+  rotates MEGAcmd to the account that actually *sees* the ROMs in-share
+  (`verificar_rotacion.py --volcado … --elegir-cuenta` — library-guided, never
+  login-guided), refreshes the dump, **always restores the preferred Switch
+  session** on exit (trap) and asks the API to scan its own DB
+  (`POST /api/retro/dump`). Install it with `make volcado-retro-cron` (every 6 h,
+  offset 30 min from the Switch cron); `make volcado-retro-estado` shows the last
+  run and `make retro-status` the freshness endpoint. `backend-retro-sync` is the
+  safety-net worker.
+- **Isolation by construction.** Every retro endpoint reads
+  `app.state.engine_retro`, so a mistake on one collection cannot touch the other.
+
+Rough start-up:
+
+```bash
+make retro-credenciales   # store the account that sees the retro in-share (chmod 600, outside the repo)
+make volcado-retro        # first dump + scan (bootstraps data/retro.db)
+make volcado-retro-cron   # keep it fresh every 6 h
+```
+
+`GET /api/retro/status` (`make retro-status`) reports dump freshness, its in-share
+`volcado_fuente`, the number of systems/games and an `aviso` to surface in the UI
+when the dump is missing or stale.
+
 ## Configuration
 
 The backend reads `ALUCARD_*` variables (see `backend/.env.example`); the
@@ -218,14 +302,19 @@ frontend build embeds `PUBLIC_BACKEND_HOST`/`PUBLIC_BACKEND_PORT` (see
 | `ALUCARD_SYNC_MIN_FRACCION`          | Min file ratio kept by a dump to be applied (def. 0.5) |
 | `ALUCARD_SYNC_MIN_TITULOS_FRACCION`  | Min title (game) ratio kept by a dump to be applied (def. 0.9) |
 | `ALUCARD_ESTADO_CUENTAS_PATH`        | Pre-flight report read by `GET /api/sync/cuentas` (def. next to the DB) |
+| `ALUCARD_RETRO_DUMP_PATH`            | Retro ROMs dump (def. `data/mega_retro_contenido_MEGAcmd.txt`) |
+| `ALUCARD_RETRO_DB_PATH` / `..._DATABASE_URL` | Retro catalog DB (def. `data/retro.db`) |
 | `PUBLIC_BACKEND_HOST` / `..._PORT`   | Backend URL baked into the web build      |
 | `BACKEND_PORT` / `FRONTEND_PORT`     | Published host ports (Compose)            |
 
 ## Operations
 
-The `Makefile` provides the main workflows: `make enrich`, `make sync`,
+The `Makefile` provides the main workflows: `make enrich`, `make enrich-retro`,
+`make enrich-campos`, `make enrich-retro-campos`, `make sync`,
 `make export`, `make catalog`, `make volcado`, `make volcado-auto`,
 `make volcado-cron`, `make sync-status`, `make pre-vuelo`, `make rotacion`,
+`make volcado-retro`, `make volcado-retro-cron`, `make volcado-retro-estado`,
+`make retro-credenciales`, `make retro-status`, `make retro-sync`,
 `make versiones`, `make versiones-daemon`, `make test`, `make lint` and
 `make e2e`.
 

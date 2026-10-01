@@ -14,12 +14,24 @@ Docker Compose deployment of supervised workers.
 
 - `backend/app`: Python application package.
   - `parser.py`, `ingest.py`, `library.py`, `catalog.py`: dump and catalog.
-  - `igdb.py`, `enrich.py`: IGDB connector and enrichment pipeline.
-  - `sync.py`: incremental synchronization.
+  - `plataformas.py`: the OFFICIAL platform of every bucket (dump code → IGDB
+    `/v4/platforms`), resolved at runtime for both collections. The dump code
+    stays in `titles.letter` (content identity in MEGA); the published name is
+    `plataforma`. Never store it in the DB or invent a name for a code that is
+    not mapped (`conocido=False`).
+  - `ingest.py` also defines the **collection** semantics (`switch` | `retro`).
+  - `igdb.py`, `enrich.py`: IGDB connector and enrichment pipeline
+    (`--coleccion retro` cleans ROM dump names before matching; the supervised
+    worker `backend-retro-enrich` enriches the retro DB). The enrichment also
+    materializes IGDB's canonical identity per title (`titles.igdb_name`,
+    `igdb_name_norm`, `igdb_year`); the real ROM/folder name stays in
+    `titles.name`, and `app.enrich --campos` refreshes those columns from the
+    stored sheets without calling IGDB.
+  - `sync.py`: incremental synchronization (`--coleccion` for the retro DB).
   - `novedades.py`: new-games/new-content events (sección "Novedades").
   - `versiones.py`: Nintendo title-id audit.
   - `indexar_descargas.py`, `megacmd.py`: MEGA download index.
-  - `routers/`: FastAPI routes.
+  - `routers/`: FastAPI routes (`retro.py` serves the separate ROMs catalog).
   - `tests/`: pytest suite.
 - `frontend/src`: Astro pages, components, styles.
 - `frontend/public`: static assets and PWA files.
@@ -63,6 +75,18 @@ Docker Compose deployment of supervised workers.
   with the weekly rotation, so it must never be ingested or turned into
   "Novedades": report it (`stats["ignorados_fuera_biblioteca"]`, `nube_propia` in
   `GET /api/sync/cuentas`) instead of indexing it.
+- The retro ROMs collection is a **separate catalog**: another in-share
+  (`INSHARE …:ORTIK 90`), another account of the pool, its own dump
+  (`data/mega_retro_contenido_MEGAcmd.txt`) and its own database
+  (`data/retro.db`). Never ingest it into `alucard.db`, never serve it from the
+  `/api/*` Switch endpoints, and never let `/retro` share state with `/`. Keep
+  `app.ingest`/`app.sync` parametrised by `--coleccion` (`role_of` and
+  `_rol_hijo` must stay in sync), and keep `scripts/volcado_retro.sh` restoring
+  the preferred credential on exit: the host has ONE MEGAcmd session and the
+  Switch pipeline is the priority. Its IGDB enrichment is its own supervised
+  worker too (`backend-retro-enrich` → `app.enrich --db /data/retro.db
+  --coleccion retro`): never point it at `alucard.db`, and keep the shared
+  `/api/retro/*` endpoints reading `app.state.engine_retro`.
 - Write atomic JSON (see `backend/app/safefs.py`) for exported artifacts.
 - Use the shared SQLite engine (`build_engine` in `backend/app/db.py`) with
   WAL and busy timeout; do not create raw engines.

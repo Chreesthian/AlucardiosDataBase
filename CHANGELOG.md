@@ -9,6 +9,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Separate retro collection (ROMs) with its own database, API and page:** the
+  account pool also carries a second, unrelated library — a retro ROM collection
+  (arcade, consoles, microcomputers) living in **another in-share** — so it is
+  indexed in `data/retro.db` (`ALUCARD_RETRO_DB_PATH`,
+  `ALUCARD_RETRO_DUMP_PATH`) and served at `/retro` (`/api/retro/meta|sistemas|
+  titles|titles/{slug}|status|dump`), **never** mixed with the Switch catalog
+  (`/api/meta`, `/api/titles`, `/novedades` stay untouched; the app holds a second
+  engine and `tests/test_retro.py` asserts the isolation). Its tree is different
+  and `app.ingest`/`app.sync` now take `--coleccion retro`: level 1 is the system
+  (`ARC N-64`, `ARC Mame2003`…), a game may be a **loose file** (MAME/Atari) or a
+  folder with its variants (`B-ASE`), and letter folders (`B/`, `#/`) are
+  containers (`role=group`) whose children are promoted instead of showing up as
+  fake games. `Title.letter` holds the system in this collection (SQLite needs no
+  migration to widen it from 2 to 64 chars).
+- **IGDB enrichment for the retro collection (`backend-retro-enrich`):** the ROMs
+  DB (`data/retro.db`) now gets the same covers, canonical name and full sheet as
+  the Switch catalog. `app.enrich` takes `--coleccion` and, for `retro`, cleans
+  the dump noise off the ROM names **before** matching
+  (`igdb.titulo_para_igdb_rom`: extension, `(USA)`/`(Europe)`, `(Rev 1)`,
+  `(En,Fr,De,Es,It)`, `[!]`…), which used to push the shared-token ratio below the
+  0.5 confidence gate and leave most of the collection without a sheet; MAME short
+  ROM names (`aof.zip`) stay as-is and are reported as `miss`. The worker mirrors
+  `backend-enrich` against its own DB (`--db /data/retro.db --coleccion retro
+  --daemon`), so titles added by `backend-retro-sync` are enriched on the next
+  pass and `app.sync` keeps preserving `igdb_*` on re-scans. `GET
+  /api/retro/status` now publishes the progress (`caratulas`, `enriquecidos`,
+  `pendientes_enrich`, `sin_match`) and `make enrich-retro` runs a pass by hand.
+- **Shared IGDB sheet component (`components/FichaIGDB.astro`):** the whole IGDB
+  sheet (hero artwork, cover, ratings, PEGI/ESRB, synopsis, storyline, releases,
+  supported languages, links + the IGDB entry, tech data, videos, screenshots and
+  similar games) was extracted from `game/[slug].astro` so `/retro/game/{slug}`
+  renders **exactly the same** markup (its own system chip and content list enter
+  through the `badge`/`contenido` slots). The canonical IGDB name
+  (`nombre_oficial`) is shown as a subtitle only when it differs from the raw
+  name (`Tomb Raider (USA).7z` → *Tomb Raider*), so the thousands of already
+  correct titles stay unchanged.
+- **Retro refresh pipeline (`scripts/volcado_retro.sh`):** picks the account that
+  actually *sees* the ROMs in-share with the same library-guided failover as the
+  Switch pre-flight (`verificar_rotacion.py --volcado … --elegir-cuenta`), so the
+  ROMs account can never be used for the Switch dump and an already-valid session
+  is never rotated; refreshes its own dump
+  (`data/mega_retro_contenido_MEGAcmd.txt`) and asks the API to scan its own DB
+  (`POST /api/retro/dump`). On exit it puts the host **back on a Switch session**
+  in three steps (preferred credential → pool failover guided by the canonical
+  dump → resume the exact session that existed before, whose key was captured up
+  front) and, if it cannot, it fails loud with rc=9 instead of pretending. The
+  restore helpers are invoked with the **Switch** credentials file explicitly,
+  because the script exports `ALUCARD_MEGA_ENV=$RETRO_ENV` for its own pre-flight
+  and the helpers were reading the retro file (often absent): step 1 never even
+  attempted the login and every run escalated to the pool failover.
+  `make volcado-retro`, `make volcado-retro-cron` (cron every 6 h, offset 30 min
+  from the Switch one), `make volcado-retro-estado`, `make retro-credenciales`,
+  `make retro-status` and `make retro-sync`; the `backend-retro-sync` worker keeps
+  the freshness guard (rc=3 when its dump goes stale) and the `backend` image also
+  mounts the dump read-only.
+- **`make retro-sync` / `retro-status` / `sync-status` pointed at the wrong port:** the
+  recipes read `$${BACKEND_PORT:-7331}` from the shell, but the Makefile never loads
+  `.env` (where `BACKEND_PORT=7441` lives), so the targets hit a port nothing publishes.
+  The variable is now resolved from `.env` (same fallback chain as
+  `scripts/volcado_retro.sh`) and exported, so the targets work out of the box.
+- **`fuente_volcado` accepts share names with spaces:** the extractor used `\S+`
+  and silently returned `None` for a real share like `INSHARE …:ORTIK 90`
+  (the ROMs in-share). Now `GET /api/sync/status` and `/api/retro/status` publish
+  the right stable source for both collections.
+- **MEGAcmd answers before the session is actually mounted:** `mega-login` can
+  return rc=0 while `mega-whoami` still shows the previous account (~2-7 s in the
+  host), and `mega-logout --keep-session` can still be closing when the next login
+  arrives (rc=54 "Already logged in"). Reading the account right after the login
+  made a **correct** login look failed (the retro run escalated to the pool
+  failover with the session already on the right account, and each extra attempt is
+  another rotation on a single-session host). Both paths now wait, bounded, for the
+  session to settle — `mega_esperar_cuenta` in `scripts/lib/mega_session.sh` and
+  `explorar_cuentas_mega._esperar_cuenta` (used by `guardar_sesion`, which also
+  retries the rotation once before restoring the previous session). Timeouts are
+  env-tunable (`MEGA_ESPERA_LOGIN` 90 s, `MEGA_ESPERA_LOGIN_FALLO` 15 s,
+  `MEGA_ESPERA_LOGOUT` 30 s).
 - **Rotation failover guided by the library (`--elegir-cuenta`):** logging into MEGA
   and *seeing* the library are two different things — an account of the pool can log
   in and still mount another share — so the pre-flight, not the login, is what
@@ -119,6 +195,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MIT license.
 - Issue and pull request templates.
 - Continuous integration workflows (tests, build, dependency and security scans).
+- **Official IGDB names as first-class catalog data (`igdb_name`):** the dump name
+  used to be the only title, so cards and the browser kept reading
+  `After Burner.zip` even with the cover already resolved. Each sheet now
+  materializes IGDB's canonical title and original release year in
+  `titles.igdb_name` / `igdb_name_norm` / `igdb_year` (`app.enrich`, both
+  collections); the real file/folder name stays in `titles.name` as the identity
+  of the content in MEGA. `/api/retro/titles` now searches by official name as
+  well (`q=Three Wonders` finds `3wonders.zip`), `GET /api/retro/status` publishes
+  `con_nombre_oficial` and `/retro` shows the official name with the ROM file
+  underneath (cards, autosuggest, detail header and `<title>`; the shared
+  `FichaIGDB` inverts its header for retro through `priorizarCanonico`). The JSON
+  export carries `nombre_oficial`/`anio`. Deployed databases get the columns with
+  an idempotent `ALTER TABLE` at startup (`db.migrar_esquema`, called by
+  `create_schema`), and `app.enrich --campos` backfills rows enriched before the
+  fields existed **without touching IGDB** (no quota, no re-matching), so the
+  thousands of already-resolved titles named themselves instantly.
+- New `sort=year` (era) for both catalogs and `sort=canonico` (official IGDB
+  name) in `library.list_titles`; retro defaults to the canonical one, so the
+  collection reads as a catalog instead of a file list (chips became *Nombre
+  oficial / Fichero / Época / Tamaño / Archivos*). The Switch catalog keeps its
+  own default (`sort=name`), unchanged.
+- **Official platform names for every bucket (`app.plataformas`):** the retro
+  collection's level 1 is a hand-made dump CODE (`ARC N-64`, `ARC S3G4-Mega
+  Drive-G3N3S1S`, `ARC ScummVM`…), which was being published raw as the system of
+  each game — cards, chips, detail badge, JSON export and the `sistema` filter all
+  showed that code. A new single source of truth (`app.plataformas`, ~40 systems
+  with the data of IGDB's `/v4/platforms`: `nombre`, `corto`, `igdb_id`,
+  `igdb_slug`, `generacion`, `familia`) now resolves it **at runtime** (no
+  migration, no stale columns) and every payload that identifies a bucket carries
+  a `plataforma` object next to the untouched `letter` (the content identity in
+  MEGA): `GET /api/retro/sistemas`, `/api/retro/titles`,
+  `/api/retro/titles/{slug}` and the Switch equivalents. `letter` still works
+  everywhere — the `sistema` filter now also accepts the canonical key
+  (`mega-drive`) or the official name (`Sega Mega Drive/Genesis`), so the new UI
+  links are readable while old ones keep resolving; a dump code that is not in the
+  catalog is published as-is with `conocido=False` (never invented) and the chips
+  warn about it. Retro chips/badges now read *N64* / *Mega Drive* instead of
+  `ARC N-W!!`, the JSON export carries `plataforma`, and the Switch detail badge
+  reads *Nintendo Switch* instead of a bare letter (`Sega NAOMI`, `Atomiswave`
+  and `ScummVM` deliberately have `igdb_id=None`: IGDB has no such platforms).
+
+### Changed
+
+- **IGDB sweep throughput (retro backfill):** enriching 10k ROMs used to crawl at
+  ~26 titles/min: `mejor_juego_v3` fired up to 7 search calls per title and kept
+  them strictly serial, so a title cost 4.6 requests (≈0.3 s throttle + latency
+  each = 2.3 s) at ~2 req/s while IGDB allows 4. The matcher now searches the
+  **clean term first** and stops as soon as the match is unambiguous
+  (`igdb._eleccion_inequivoca`: decorative core or exact identity — criteria that
+  provably return what the full matcher would, so match quality is unchanged),
+  and `app.enrich` overlaps the requests with a thread pool (`--concurrencia`,
+  default 4) paced by the connector throttle (~3.3 req/s, below the 4 req/s
+  limit). Only the network is parallel: the SQLAlchemy session is touched
+  exclusively from the main thread. Passes now log their real pace
+  (`progreso %d/%d … N títulos/min`, `stats["por_min"]`), so a 10k backfill is
+  observable instead of opaque.
+- **IGDB/HTTP errors no longer become permanent misses:** when *every* search of a
+  title failed (429, timeout, network), `mejor_juego_v3` now propagates the error
+  so the pass counts it as `error` and retries on a later pass, instead of
+  writing `miss` — which `necesita_trabajo` never retries.
 
 ### Fixed
 
