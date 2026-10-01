@@ -9,6 +9,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Rotation failover guided by the library (`--elegir-cuenta`):** logging into MEGA
+  and *seeing* the library are two different things — an account of the pool can log
+  in and still mount another share — so the pre-flight, not the login, is what
+  decides. When this week's credential passes the pre-flight without seeing the
+  library, `scripts/autovolcado.sh` tries the pool
+  (`~/.config/alucard/mega_cuentas.txt`, `ALUCARD_MEGA_CUENTAS`) account by account
+  with `verificar_rotacion.py --elegir-cuenta` and leaves the session on the first
+  one that *does* see it (the script no longer depends on who measures: `medir` and
+  `informe_de` are now independent of `main`), so the cron keeps refreshing instead
+  of sitting on rc=8 every 6 h. If no account of the pool sees it, the preferred
+  credential is restored and the pre-flight still fails with rc=8. The report grows
+  `modo`, `cuenta_anterior`, `elegida`, `origen`, `candidatas`, `pool`, `inicial` and
+  `restaurado` — never a password — and `--guardar-elegida` stores the chosen account
+  as the preferred credential (chmod 600, outside the repo). `ALUCARD_ROTACION=0`
+  disables the failover and `ALUCARD_ROTACION_PERSISTIR=1` makes the persistence
+  opt-in; `make pre-vuelo` and `make rotacion` run both host-side modes.
+- **The catalog only indexes the library:** the dump also carries the sectors of
+  the ACCOUNT that produced it (`CLOUD_DRIVE`, `INBOX`, `RUBBISH_BIN`) and that
+  personal cloud changes with the weekly rotation (real case: one account with an
+  empty cloud and another with two personal videos, same in-share). `app.ingest`
+  and `app.sync` keep only the library sectors (`parser.es_biblioteca`), so those
+  files never enter the catalog, never become "Novedades" and never move the
+  published totals (`total_files`/`total_folders` describe the catalog;
+  `total_files_volcado`/`total_folders_volcado` the raw dump). Every scan reports
+  what was ignored (`ignorados_fuera_biblioteca`, logged and printed by the CLI)
+  and the pre-flight exposes how many entries the current account keeps outside
+  the library (`nube_propia` in `GET /api/sync/cuentas`, shown on `/novedades`).
+  A database that already had that noise is cleaned up by the next scan.
+- **Pre-flight for the weekly rotation (`GET /api/sync/cuentas`):**
+  `scripts/verificar_rotacion.py` checks in seconds (`mega-mount` + a
+  non-recursive `mega-ls`) that the active MEGA session mounts the in-share of the
+  canonical dump and that its root still holds the known buckets, and writes the
+  verdict atomically to `data/estado_cuentas.json` (rc=4 without session, rc=8 when
+  this week's credentials mount another library, both *before* spending minutes on
+  `mega-ls -R -l` and without touching the dump). `GET /api/sync/cuentas`
+  publishes it (verdict, rotating account, age, missing in-shares/buckets) and
+  `/novedades` warns when the credentials of the week do not see the library; a
+  missing or unreadable report is `disponible: false` and is *not* a failure, so
+  `ALUCARD_PREFLIGHT=0` does not raise a permanent alarm.
+- **Per-account diagnosis (`scripts/explorar_cuentas_mega.py`, host):** compares
+  the MEGA accounts of the rotation with each other and against the current dump —
+  in-shares, quotas, size, titles per letter, exclusive titles and same-title
+  complements — and writes `data/reporte_cuentas_mega.{json,md}` with a
+  recommendation of which account can run `make volcado-cron` and which one mounts
+  a *different* library that must not be mixed in. Passwords are never printed nor
+  written to the report.
+- **Title coverage guard (partially re-shared library):** a share that is
+  re-shared in halves keeps every sector but ships fewer games, and applying it
+  would delete titles and their IGDB data in silence. `refrescar_volcado.py`
+  aborts (rc=1, nothing written) when the candidate keeps less than
+  `ALUCARD_MIN_TITULOS_FRACCION` (0.9) of the titles of the current dump
+  (`--permitir-titulos-perdidos` overrides it), `app.sync` enforces the same rule
+  before running the diff (`--min-titulos-fraccion`, blindaje 3, default
+  `ALUCARD_SYNC_MIN_TITULOS_FRACCION`) and `POST /api/sync/dump` returns 400 for
+  it. The canonical count lives in `app.ingest.contar_titulos*`, so the host and
+  the database share one definition of "title".
 - **Weekly credential rotation support (different account, same library):**
   `scripts/lib/mega_session.sh` loads `MEGA_EMAIL`/`MEGA_PASSWORD` (env, repo
   `.env`, or `~/.config/alucard/mega.env` written by `make credenciales`) and
@@ -66,6 +122,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Phantom "new games" caused by the weekly rotation:** rotating the account
+  dragged its personal cloud into the catalog and registered files such as
+  `4410_13_SUB.mp4` as `juego_nuevo` in "Novedades" (besides shifting the
+  `/api/meta` totals and breaking the end-to-end audit) with zero real changes in
+  the library. Only the library sectors are indexed now, previously stored noise is
+  removed by the next scan, and `app.novedades.titulo_de` refuses to build an event
+  out of a path that is not a bucket inside an in-share, so rebuilding a past
+  period (`app.novedades --desde/--hasta`) cannot reintroduce them either.
 - **Update lag root cause:** nothing regenerated `mega_cuenta_contenido_MEGAcmd.txt`,
   so `backend-sync` kept hashing an unchanged file and logged "volcado sin
   cambios" (invisible: the daemon had no logging configured) while the database,

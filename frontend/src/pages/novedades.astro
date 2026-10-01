@@ -11,10 +11,14 @@ const LIMITE = 120;
 
 let juegos: NovedadesOut | null = null;
 let contenido: NovedadesOut | null = null;
-// Frescura del volcado: se consulta aparte y NUNCA rompe la página. Si el
-// pipeline de actualización está parado, la lista de esta sección estaría
-// incompleta en silencio, así que se avisa en pantalla.
-const estado = await api.syncStatus().catch(() => null);
+// Frescura del volcado y pre-vuelo de rotación: se consultan aparte y NUNCA
+// rompen la página. Si el pipeline de actualización está parado, o si las
+// credenciales de la semana no ven la biblioteca, la lista de esta sección
+// estaría incompleta en silencio, así que se avisa en pantalla.
+const [estado, cuentas] = await Promise.all([
+  api.syncStatus().catch(() => null),
+  api.cuentasEstado().catch(() => null),
+]);
 let error: string | null = null;
 try {
   [juegos, contenido] = await Promise.all([
@@ -37,6 +41,18 @@ const ETIQUETA_TIPO: Record<string, string> = {
 
 // ¿La biblioteca está congelada? (volcado ausente o más viejo que el límite)
 const avisoVolcado = estado ? !estado.dump_exists || estado.dump_obsoleto : false;
+
+// ¿Las credenciales MEGA de la semana montan OTRA biblioteca? Los guardias del
+// pipeline abortan el refresco (el catálogo queda intacto), pero entonces no entra
+// nada nuevo: hay que decirlo en vez de mostrar una sección vacía sin motivo.
+// Un informe ausente (`disponible: false`) o forzado a propósito no son alarma.
+const avisoCuentas = cuentas?.disponible === true && !cuentas.ok && !cuentas.forzado;
+const cuentasSinSesion = cuentas?.causa === "sin_sesion";
+const cuentasRecientes = cuentas?.generado_en
+  ? `Comprobado hace ${edadLegible(cuentas.edad_horas)}${
+      cuentas.cuenta ? ` con la cuenta ${cuentas.cuenta}` : ""
+    }.`
+  : null;
 
 function edadLegible(horas: number | null): string {
   if (horas === null) return "sin datos";
@@ -83,6 +99,33 @@ function fechaLegible(iso: string): string {
           </p>
         ) : null
       }
+      {
+        cuentas?.disponible && cuentasRecientes ? (
+          <p class="mt-0.5 text-xs text-zinc-500">
+            Pre-vuelo de rotación:{" "}
+            <span class={cuentas.ok ? "text-zinc-400" : "text-amber-300"}>
+              {cuentas.ok
+                ? "la sesión ve la biblioteca"
+                : cuentas.forzado
+                  ? "forzado (otra biblioteca aceptada a propósito)"
+                  : "la sesión NO ve la biblioteca"}
+            </span>
+            {" · "}
+            {cuentasRecientes}
+            {
+              cuentas?.nube_propia?.entradas ? (
+                <span>
+                  {" "}
+                  Esa cuenta tiene{" "}
+                  <span class="text-zinc-400">{cuentas.nube_propia.entradas}</span> entrada(s) en
+                  su nube personal, fuera de la biblioteca: no se indexan (el catálogo es solo la
+                  biblioteca), así que no cuentan en los totales de esta página.
+                </span>
+              ) : null
+            }
+          </p>
+        ) : null
+      }
     </div>
     {
       resumen ? (
@@ -100,6 +143,48 @@ function fechaLegible(iso: string): string {
       ) : null
     }
   </section>
+
+  {
+    avisoCuentas ? (
+      <section class="mt-4 rounded-2xl border border-amber-800/70 bg-amber-950/25 p-4">
+        <h2 class="text-sm font-semibold text-amber-300">
+          <span aria-hidden="true">🔑</span>{" "}
+          {cuentasSinSesion
+            ? "No se ha podido verificar la cuenta MEGA"
+            : "Las credenciales MEGA de la semana no ven esta biblioteca"}
+        </h2>
+        <p class="mt-1 text-xs leading-relaxed text-amber-200/80">
+          {cuentas?.aviso}{" "}
+          {cuentasSinSesion
+            ? "Sin sesión de MEGAcmd en el host tampoco se puede refrescar el volcado."
+            : "El refresco se abortó antes de tocar la base de datos: el catálogo sigue intacto, sin perder títulos ni sus fichas IGDB."}{" "}
+          Renueva las credenciales con{" "}
+          <code class="rounded bg-black/40 px-1 py-0.5 text-amber-100">make credenciales</code>{" "}
+          y refresca con{" "}
+          <code class="rounded bg-black/40 px-1 py-0.5 text-amber-100">make volcado-auto</code>.{" "}
+          {cuentasRecientes}
+        </p>
+        {cuentas && cuentas.faltan_rutas.length > 0 ? (
+          <ul class="mt-1.5 space-y-0.5">
+            {cuentas.faltan_rutas.slice(0, 5).map((ruta) => (
+              <li class="truncate text-[11px] text-amber-200/70">· falta el in-share {ruta}</li>
+            ))}
+          </ul>
+        ) : null}
+        {cuentas && Object.keys(cuentas.faltan_buckets).length > 0 ? (
+          <ul class="mt-1.5 space-y-0.5">
+            {Object.entries(cuentas.faltan_buckets)
+              .slice(0, 5)
+              .map(([ruta, buckets]) => (
+                <li class="truncate text-[11px] text-amber-200/70">
+                  · {ruta}: faltan {buckets.slice(0, 6).join(", ")}
+                </li>
+              ))}
+          </ul>
+        ) : null}
+      </section>
+    ) : null
+  }
 
   {
     avisoVolcado ? (

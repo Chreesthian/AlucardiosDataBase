@@ -37,6 +37,22 @@
 #       avisa con rc=4 sin dejar el host sin MEGAcmd).
 #     · `refrescar_volcado.py` aborta si el candidato pierde sectores que hoy
 #       traen archivos → unas credenciales sin acceso NO pueden vaciar la BD.
+#     · Además de los sectores, se comprueba la COBERTURA de títulos (carpetas de
+#       juego): un share re-compartido incompleto mantiene los sectores pero trae
+#       menos juegos, y perderlos mutila el catálogo y su IGDB. Umbral en
+#       ALUCARD_MIN_TITULOS_FRACCION (def. 0.9 = no se admite perder más del 10 %).
+#     · Antes de listar nada, `verificar_rotacion.py` comprueba en segundos que la
+#       sesión monta el in-share del volcado y que su raíz conserva los buckets: si
+#       las credenciales de la semana montan OTRA biblioteca (p. ej. un share de
+#       ROMs retro), se aborta con rc=8 sin gastar minutos de `mega-ls -R -l` ni
+#       tocar el volcado. Desactivable con ALUCARD_PREFLIGHT=0.
+#     · Si la credencial de la semana entra pero NO ve la biblioteca, se prueba el
+#       pool con el mismo pre-vuelo por cuenta (`verificar_rotacion.py
+#       --elegir-cuenta`) y la sesión se queda en la primera que sí la ve: el cron
+#       sigue funcionando en vez de quedarse en rc=8 hasta que alguien mire. Si
+#       ninguna la ve, se restaura la credencial preferida y se aborta igual.
+#       Desactivable con ALUCARD_ROTACION=0; con ALUCARD_ROTACION_PERSISTIR=1 la
+#       cuenta elegida se guarda además como credencial preferida (chmod 600).
 #     · El diff de `app.sync` es por rutas, así que rotar la cuenta sin cambios
 #       reales produce 0 altas/bajas (nada de novedades fantasma ni de perder
 #       el enriquecimiento IGDB).
@@ -50,9 +66,21 @@
 #   ALUCARD_API_URL     API del backend (def. http://127.0.0.1:<BACKEND_PORT|7331>)
 #   ALUCARD_PY          intérprete con las deps del backend (def. backend/.venv/bin/python)
 #   ALUCARD_CRON_HORAS  cadencia del cron instalado (def. 6)
+#   ALUCARD_PREFLIGHT   "0" desactiva el pre-vuelo de rotación (def. activado)
+#   ALUCARD_ROTACION    "0" desactiva el failover del pool cuando la credencial de
+#                       la semana no ve la biblioteca (def. activado)
+#   ALUCARD_ROTACION_PERSISTIR
+#                       "1" guarda la cuenta elegida del pool como credencial
+#                       preferida (def. 0: solo se deja la sesión activa)
+#   ALUCARD_MEGA_CUENTAS
+#                       pool de cuentas (def. ~/.config/alucard/mega_cuentas.txt)
+#   ALUCARD_MIN_TITULOS_FRACCION
+#                       fracción mínima de títulos que debe conservar el volcado
+#                       nuevo frente al vigente (def. 0.9; 0 = sin límite)
 #
 # CÓDIGOS DE SALIDA: 0 ok · 4 sin sesión MEGA/credenciales · 5 fallo del volcado ·
-#                    6 fallo del escaneo en la API · 7 otra ejecución en curso
+#                    6 fallo del escaneo en la API · 7 otra ejecución en curso ·
+#                    8 la cuenta de la semana no ve la biblioteca del volcado
 # =============================================================================
 set -uo pipefail
 
@@ -143,6 +171,12 @@ quitar_cron() {
 
 mostrar_estado() {
   if [[ -f "$ESTADO" ]]; then cat "$ESTADO"; else echo "(sin estado: aún no se ha ejecutado)"; fi
+  echo "── pre-vuelo de rotación ($LOG_DIR/estado_cuentas.json) ──"
+  if [[ -f "$LOG_DIR/estado_cuentas.json" ]]; then
+    cat "$LOG_DIR/estado_cuentas.json"
+  else
+    echo "(sin datos: aún no se ha ejecutado el pre-vuelo)"
+  fi
   echo "── últimas 15 líneas de $LOG ──"
   if [[ -f "$LOG" ]]; then tail -n 15 "$LOG"; else echo "(sin log)"; fi
   echo "── crontab ──"
@@ -202,6 +236,57 @@ if ! asegurar_sesion_mega; then
 fi
 CUENTA="$(cuenta_activa_mega)"
 log "sesión MEGAcmd: ${CUENTA:-<ninguna>} (la biblioteca se identifica por el SHARE del volcado, no por la cuenta)"
+
+# Pre-vuelo de rotación: ¿esta cuenta ve LA MISMA biblioteca que el volcado vigente?
+# Es un `mega-mount` + un `mega-ls` NO recursivo (segundos). Sin él, unas
+# credenciales que montan otro share se descubren tras listar TiB enteros.
+if [[ "${ALUCARD_PREFLIGHT:-1}" != "0" ]]; then
+  PRE=(--mega-bin "$MEGA_BIN" --json "$LOG_DIR/estado_cuentas.json")
+  [[ "$QUIET" == "1" ]] && PRE+=(--quiet)
+  POOL_PROBADO=0
+  if ! "$ALUCARD_PY" "$ROOT/scripts/verificar_rotacion.py" "${PRE[@]}" >>"$LOG" 2>&1; then
+    rc=$?
+    [[ "$rc" == "4" ]] || rc=8
+    # Failover guiado por BIBLIOTECA: el login solo dice si la cuenta entra, y una
+    # cuenta del pool puede entrar y montar OTRO share. Antes de abortar (dejando
+    # el cron en rc=8 cada 6 h) se prueba el pool con el mismo pre-vuelo: se
+    # queda activa la primera cuenta que ve la biblioteca.
+    POOL="${MEGA_CUENTAS_FICHERO:-$MEGA_CUENTAS_POR_DEFECTO}"
+    if [[ "$rc" == "8" && "${ALUCARD_ROTACION:-1}" != "0" && -f "$POOL" ]]; then
+      POOL_PROBADO=1
+      log "la sesión ${CUENTA:-<ninguna>} NO ve la biblioteca: pre-vuelo por cuenta del pool ($POOL)"
+      ELEGIR=(--elegir-cuenta --cuentas "$POOL" --mega-bin "$MEGA_BIN"
+              --json "$LOG_DIR/estado_cuentas.json")
+      [[ "${ALUCARD_ROTACION_PERSISTIR:-0}" == "1" ]] && ELEGIR+=(--guardar-elegida)
+      [[ "$QUIET" == "1" ]] && ELEGIR+=(--quiet)
+      if "$ALUCARD_PY" "$ROOT/scripts/verificar_rotacion.py" "${ELEGIR[@]}" >>"$LOG" 2>&1; then
+        CUENTA="$(cuenta_activa_mega)"
+        log "failover de rotación: la sesión pasa a ${CUENTA:-<ninguna>} (esa cuenta SÍ ve la biblioteca del volcado); se continúa"
+        rc=0
+      else
+        rc=$?
+        [[ "$rc" == "4" ]] || rc=8
+        log "failover de rotación: ninguna cuenta del pool ve la biblioteca (rc=$rc)"
+      fi
+    fi
+    if [[ "$rc" != "0" ]]; then
+      mensaje="pre-vuelo de rotación (rc=$rc): las credenciales de la semana NO ven la biblioteca del volcado"
+      [[ "$POOL_PROBADO" == "1" ]] && mensaje+=" y el pool probado tampoco"
+      mensaje+="; mira $LOG_DIR/estado_cuentas.json"
+      if [[ "$DRY_RUN" == "1" ]]; then
+        log "AVISO: $mensaje (dry-run: se continúa sin escribir el volcado)"
+      else
+        log "ERROR: $mensaje"
+        corta "autovolcado: $mensaje → el volcado y la BD NO se tocan"
+        escribir_estado "$rc" "$mensaje" "$INICIO" "$(date -Is)"
+        exit "$rc"
+      fi
+    fi
+  else
+    log "pre-vuelo de rotación: ok (la sesión ve la biblioteca del volcado)"
+  fi
+fi
+
 ARGS=(--mega-bin "$MEGA_BIN")
 [[ "$DRY_RUN" == "1" ]] && ARGS+=(--dry-run)
 log "volcando: $ALUCARD_PY scripts/refrescar_volcado.py ${ARGS[*]}"

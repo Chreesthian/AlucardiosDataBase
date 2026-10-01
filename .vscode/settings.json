@@ -1,0 +1,8 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/backend/.venv/bin/python",
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/backend",
+    "${workspaceFolder}/backend/.venv/lib/python3.12/site-packages"
+  ],
+  "sarif-viewer.connectToGithubCodeScanning": "on"
+}

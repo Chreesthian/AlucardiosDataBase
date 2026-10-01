@@ -51,6 +51,18 @@ Docker Compose deployment of supervised workers.
   (`INSHARE <owner>:<folder>`), credentials come from `scripts/lib/mega_session.sh`
   (`make credenciales`), and a rotation that reaches less data must abort loudly
   (`refrescar_volcado.py` sector guard) instead of emptying the catalog.
+- The rotation failover is guided by the LIBRARY, never by the login: an account
+  can log in and still mount another share. Keep `verificar_rotacion.elegir_del_pool`
+  as the only path that rotates accounts in the pre-flight, keep restoring the
+  preferred credential and returning rc=8 when no pool account sees the library
+  (never a silent success), and never let a pool password reach a report, a log or
+  the API.
+- The catalog indexes **only the library** (the in-share sectors,
+  `parser.es_biblioteca`). The dump also carries the personal cloud of the account
+  that produced it (`CLOUD_DRIVE`, `INBOX`, `RUBBISH_BIN`) and that cloud changes
+  with the weekly rotation, so it must never be ingested or turned into
+  "Novedades": report it (`stats["ignorados_fuera_biblioteca"]`, `nube_propia` in
+  `GET /api/sync/cuentas`) instead of indexing it.
 - Write atomic JSON (see `backend/app/safefs.py`) for exported artifacts.
 - Use the shared SQLite engine (`build_engine` in `backend/app/db.py`) with
   WAL and busy timeout; do not create raw engines.

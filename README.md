@@ -142,15 +142,58 @@ make credenciales     # stores this week's MEGA_EMAIL/MEGA_PASSWORD (chmod 600)
 - If the active session belongs to another account, `scripts/lib/mega_session.sh`
   logs in again on its own (login first; if it fails it **restores** the previous
   session and exits rc=4, so the host is never left without MEGAcmd).
+- Before listing anything, `scripts/verificar_rotacion.py` runs a **pre-flight** in
+  seconds (`mega-mount` + a non-recursive `mega-ls`) and checks that the active
+  session actually mounts the in-share of the current dump and that its root still
+  holds the same buckets. If this week's credentials mount a *different* library
+  it aborts with **rc=8** without spending minutes on `mega-ls -R -l` and without
+  touching the dump; the verdict is written atomically to
+  `data/estado_cuentas.json`. `ALUCARD_PREFLIGHT=0` disables it.
+  `GET /api/sync/cuentas` publishes that verdict (verdict, rotating account, age,
+  what is missing) and `/novedades` warns when this week's credentials mount a
+  *different* library, so a frozen catalog is visible instead of silent. In
+  Docker the API reads the report through a read-only bind mount
+  (`ALUCARD_ESTADO_CUENTAS_PATH=/estado/estado_cuentas.json`); a missing report is
+  reported as `disponible: false` and is *not* treated as a failure.
+- **Failover guided by the library (`make rotacion`):** logging into MEGA and
+  *seeing* the library are two different things — an account of the pool can log in
+  and still mount another share, which is why the pre-flight is what decides. When
+  this week's credential passes the pre-flight without seeing the library,
+  `autovolcado.sh` tries the pool (`~/.config/alucard/mega_cuentas.txt`,
+  `ALUCARD_MEGA_CUENTAS`) account by account with the same pre-flight and leaves the
+  session on the first one that *does* see it
+  (`verificar_rotacion.py --elegir-cuenta`), so the cron keeps refreshing instead of
+  failing every 6 h. If no account of the pool sees it, the preferred credential is
+  restored and it aborts with rc=8 exactly as before. `ALUCARD_ROTACION=0` disables
+  the failover, `ALUCARD_ROTACION_PERSISTIR=1` also stores the chosen account as the
+  preferred credential (chmod 600, outside the repo) and no password ever reaches
+  the report, the logs or the API.
 - `refrescar_volcado.py` aborts (rc=1, nothing written) if the candidate dump
   loses a sector that currently carries files — credentials that cannot reach the
   library can never empty the catalog. `--permitir-sectores-perdidos` overrides
   it for an intentional change.
+- The same candidate is checked for **title coverage** (game folders): a share
+  that is re-shared only partially keeps every sector but ships fewer games, and
+  applying it would silently delete titles and their IGDB data. If the new dump
+  keeps less than `ALUCARD_MIN_TITULOS_FRACCION` (0.9) of the titles in the
+  current one, the refresh aborts too; `--permitir-titulos-perdidos` overrides it.
+  `app.sync` enforces the same rule (`--min-titulos-fraccion`, blindaje 3) before
+  running the diff, and `POST /api/sync/dump` returns 400 for it.
 - `app.sync` diffs by path and the sector label comes from the share
   (`INSHARE <owner>:<folder>`), so rotating the account without real changes
   yields 0 additions/removals: no phantom "Novedades" and no IGDB re-enrichment.
   `GET /api/sync/status` reports the stable `dump_fuente` next to the rotating
   `account`, and `/novedades` shows it.
+- **Only the library is indexed.** The dump also carries the sectors that belong
+  to the *account* that produced it (`CLOUD_DRIVE`, `INBOX`, `RUBBISH_BIN`) and
+  that personal cloud changes with the weekly rotation. `app.sync`/`app.ingest`
+  keep just the library sectors (`INSHARE …`), so those files never enter the
+  catalog, never show up in "Novedades" and never move the published totals;
+  every scan reports what was ignored
+  (`stats["ignorados_fuera_biblioteca"]`, logged and printed by the CLI), and the
+  pre-flight publishes how many entries the current account keeps outside the
+  library (`nube_propia` in `GET /api/sync/cuentas`, shown on `/novedades`). A
+  database that already had such noise is cleaned up by the next scan.
 - **Share renaming (e.g. `BCKP1` → `BCKP2`)**: when a share disappears and a new
   one appears with equivalent content, `app.sync` detects the rotation, remaps the
   stored paths and resets the cached download links (`pendiente`) instead of
@@ -173,6 +216,8 @@ frontend build embeds `PUBLIC_BACKEND_HOST`/`PUBLIC_BACKEND_PORT` (see
 | `ALUCARD_IGDB_CLIENT_ID` / `..._SECRET` | IGDB credentials (also `IGDB_*`)    |
 | `ALUCARD_SYNC_MAX_EDAD_HORAS`        | Max dump age before the sync watcher fails (def. 26) |
 | `ALUCARD_SYNC_MIN_FRACCION`          | Min file ratio kept by a dump to be applied (def. 0.5) |
+| `ALUCARD_SYNC_MIN_TITULOS_FRACCION`  | Min title (game) ratio kept by a dump to be applied (def. 0.9) |
+| `ALUCARD_ESTADO_CUENTAS_PATH`        | Pre-flight report read by `GET /api/sync/cuentas` (def. next to the DB) |
 | `PUBLIC_BACKEND_HOST` / `..._PORT`   | Backend URL baked into the web build      |
 | `BACKEND_PORT` / `FRONTEND_PORT`     | Published host ports (Compose)            |
 
@@ -180,8 +225,9 @@ frontend build embeds `PUBLIC_BACKEND_HOST`/`PUBLIC_BACKEND_PORT` (see
 
 The `Makefile` provides the main workflows: `make enrich`, `make sync`,
 `make export`, `make catalog`, `make volcado`, `make volcado-auto`,
-`make volcado-cron`, `make sync-status`, `make versiones`,
-`make versiones-daemon`, `make test`, `make lint` and `make e2e`.
+`make volcado-cron`, `make sync-status`, `make pre-vuelo`, `make rotacion`,
+`make versiones`, `make versiones-daemon`, `make test`, `make lint` and
+`make e2e`.
 
 ## Documentation
 

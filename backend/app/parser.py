@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -24,6 +25,14 @@ from .normalize import ext_of
 
 FOLDER = "folder"
 FILE = "file"
+
+# Etiqueta del sector que aporta la biblioteca: el *in-share* (`INSHARE dueño:carpeta`).
+# El volcado trae además los sectores propios de la cuenta que lo generó
+# (CLOUD_DRIVE, INBOX, RUBBISH_BIN) y esos NO son la biblioteca: las credenciales
+# MEGA rotan cada semana y su nube personal cambia con ellas, así que indexarla
+# contaminaría el catálogo y "Novedades" en cada rotación. El catálogo se
+# construye solo con los sectores de biblioteca (`app.ingest`, `app.sync`).
+SECTOR_BIBLIOTECA = "INSHARE "
 
 _SIZE_RE = re.compile(r"\s+\((\d+) bytes\)\s*$")
 _ROOT_RE = re.compile(r"^\[ROOT\]")
@@ -33,6 +42,16 @@ _KIND_KEYS = {
     "fecha de volcado": "generated_at",
     "herramienta": "tool",
 }
+
+
+def es_biblioteca(label: str) -> bool:
+    """¿La etiqueta de sector aporta la biblioteca (`INSHARE dueño:carpeta`)?
+
+    Criterio ÚNICO compartido por ingesta, escaneo incremental y el registro de
+    "Novedades": el resto de sectores son la nube personal de la cuenta que
+    generó el volcado y quedan fuera del catálogo.
+    """
+    return label.strip().startswith(SECTOR_BIBLIOTECA)
 
 
 @dataclass
@@ -72,15 +91,28 @@ class ParsedDump:
     folder_count: int = 0
     total_size: int = 0
 
-    def totals(self) -> dict:
+    def totals(self, *, sectores: Iterable[str] | None = None) -> dict:
+        """Totales (files/folders/size) del volcado.
+
+        `sectores` limita la suma a esas etiquetas de sector: `app.sync` lo usa
+        para que los totales publicados describan el catálogo (la biblioteca) y
+        no la nube personal de la cuenta que generó el volcado.
+        """
+        filtro = None if sectores is None else {s.strip() for s in sectores}
         files = folders = 0
         size = 0
         for sec in self.sectors:
+            if filtro is not None and sec.label not in filtro:
+                continue
             for root in sec.roots:
                 files += root.total_files
                 folders += root.total_folders
                 size += root.total_size
         return {"files": files, "folders": folders, "size": size}
+
+    def sectores_biblioteca(self) -> list[str]:
+        """Etiquetas de los sectores que aportan la biblioteca (los in-shares)."""
+        return [sec.label for sec in self.sectors if es_biblioteca(sec.label)]
 
 
 def _finalize(node: Node) -> tuple[int, int, int]:

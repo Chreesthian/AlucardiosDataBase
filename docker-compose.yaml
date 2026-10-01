@@ -23,11 +23,21 @@ services:
       ALUCARD_DUMP_PATH: /dump/mega_cuenta_contenido_MEGAcmd.txt
       ALUCARD_API_PORT: "7331"
       ALUCARD_CORS_ORIGINS: "http://localhost:${FRONTEND_PORT:-7330},http://127.0.0.1:${FRONTEND_PORT:-7330}"
+      # Pre-vuelo de rotación: el host (`make volcado`) deja su veredicto en el
+      # `data/` del repo y la API lo publica en `GET /api/sync/cuentas` para que
+      # la UI avise cuando las credenciales de la semana montan OTRA biblioteca.
+      ALUCARD_ESTADO_CUENTAS_PATH: /estado/estado_cuentas.json
     volumes:
       - alucard-data:/data
       - type: bind
         source: ./mega_cuenta_contenido_MEGAcmd.txt
         target: /dump/mega_cuenta_contenido_MEGAcmd.txt
+        read_only: true
+      # El informe del pre-vuelo NO vive en el volumen de la BD (lo escribe el
+      # host): se monta el `data/` del repo en solo lectura, en otra ruta.
+      - type: bind
+        source: ./data
+        target: /estado
         read_only: true
     ports:
       - "${BACKEND_PORT:-7331}:7331"

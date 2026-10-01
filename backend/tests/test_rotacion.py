@@ -197,7 +197,8 @@ def test_sin_solape_no_se_considera_rotacion(tmp_path, monkeypatch):
     app = build_app(tmp_path, SAMPLE_DUMP)
     engine = app.state.engine
     otra = CABECERA.format(cuenta="otra@example.com") + SECTOR_OTRO
-    stats = refresh_text(engine, otra, min_fraccion=0)
+    # min_titulos_fraccion=0: aquí se prueba el diff normal, no la cobertura de títulos.
+    stats = refresh_text(engine, otra, min_fraccion=0, min_titulos_fraccion=0)
     assert stats["rotados"] == []
     assert stats["removed_files"] > 0  # se sustituye el contenido (comportamiento normal)
 

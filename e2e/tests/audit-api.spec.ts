@@ -29,6 +29,40 @@ test.describe("API · salud y despliegue", () => {
     expect(typeof body.dump_age_hours).toBe("number");
     expect(body.dump_age_hours).toBeLessThan(body.dump_max_edad_horas);
   });
+  test("GET /api/sync/cuentas publica el pre-vuelo de rotación", async () => {
+    const { status, body } = await apiGet("/api/sync/cuentas");
+    expect(status).toBe(200);
+    if (!body.disponible) {
+      // El informe lo escribe el host (`make volcado`): si todavía no existe no
+      // es un fallo del pipeline y la UI no debe alarmar por ello.
+      expect(body.ok).toBe(true);
+      expect(body.forzado).toBe(false);
+      expect(body.aviso).toContain("pre-vuelo");
+      return;
+    }
+    // Con informe, la UI decide: tiene que llegar todo lo necesario para explicar
+    // tanto "las credenciales de la semana montan OTRA biblioteca" como el caso sano.
+    expect(typeof body.ok).toBe("boolean");
+    expect(typeof body.forzado).toBe("boolean");
+    expect(Array.isArray(body.faltan_rutas)).toBe(true);
+    expect(typeof body.faltan_buckets).toBe("object");
+    expect(body.biblioteca).not.toBeNull();
+    if (body.ok) {
+      expect(body.cuenta).toContain("@");
+      expect(body.biblioteca.titulos).toBeGreaterThan(0);
+      expect(body.biblioteca.files).toBeGreaterThan(0);
+      expect(body.edad_horas).toBeGreaterThan(0);
+      expect(body.aviso).toBeNull();
+      // El catálogo indexa SOLO la biblioteca: las entradas de la nube personal
+      // de la cuenta de la semana se cuentan aparte (pueden ser cero).
+      expect(typeof body.nube_propia?.entradas).toBe("number");
+      expect(Array.isArray(body.nube_propia?.nombres)).toBe(true);
+    } else {
+      // O hay motivo (y se enseña) o el vaciado se forzó a propósito.
+      expect(body.forzado || body.aviso).toBeTruthy();
+      expect(Array.isArray(body.faltan_rutas)).toBe(true);
+    }
+  });
 });
 
 test.describe("API · coherencia de la ingesta", () => {

@@ -22,9 +22,21 @@
 #   1. entorno (MEGA_EMAIL/MEGA_PASSWORD)   2. $ALUCARD_MEGA_ENV
 #   3. <raíz>/.env                          4. <raíz>/backend/.env
 #   5. ~/.config/alucard/mega.env  (recomendado: fuera del repo, chmod 600)
+#
+# FAILOVER ENTRE CUENTAS DEL POOL:
+#   Las cuentas rotan cada semana y a veces una se queda con la contraseña
+#   caducada. Si el login con la cuenta preferida falla, se prueban (en orden) las
+#   cuentas de `$ALUCARD_MEGA_CUENTAS` (def.
+#   ~/.config/alucard/mega_cuentas.txt, formato `email<sep>password`) y se sigue
+#   con la primera que entre. Nunca se elige "a ciegas": `verificar_rotacion.py`
+#   aborta después si esa cuenta no monta la biblioteca del volcado, así que un
+#   failover a un share equivocado no puede vaciar la BD.
 # =============================================================================
 
 MEGA_ENV_POR_DEFECTO="${HOME:-/home/christian}/.config/alucard/mega.env"
+MEGA_CUENTAS_POR_DEFECTO="${ALUCARD_MEGA_CUENTAS:-${HOME:-/home/christian}/.config/alucard/mega_cuentas.txt}"
+MEGA_CUENTAS_FICHERO=""
+MEGA_LOGIN_DETALLE=""
 
 # `log` de respaldo si el script que carga el helper no define el suyo.
 if ! declare -F log >/dev/null 2>&1; then
@@ -61,11 +73,60 @@ cargar_credenciales_mega() {  # cargar_credenciales_mega <raíz> → 0 si hay em
 }
 
 mega_sanear() {  # mega_sanear <texto> — nunca dejar la contraseña en un log
-  local texto="$1"
-  if [[ -n "${MEGA_PASSWORD:-}" ]]; then
-    texto="${texto//"$MEGA_PASSWORD"/***}"
-  fi
+  local texto="$1" secreto
+  # Se redactan también las contraseñas vistas en reintentos anteriores: el
+  # failover prueba varias y ninguna debe acabar en un log.
+  for secreto in "${MEGA_PASSWORD:-}" "${MEGA_PASSWORD_PREVIA:-}" "${MEGA_PASSWORD_INTENTO:-}"; do
+    [[ -n "$secreto" ]] && texto="${texto//"$secreto"/***}"
+  done
   printf '%s' "${texto%%$'\n'*}"
+}
+
+mega_cuentas_pool() {  # email<TAB>password por línea del fichero del pool (si existe)
+  local fichero="${1:-$MEGA_CUENTAS_FICHERO}"
+  local linea email pass
+  # Separador: tabulador, ';', ',', '=' o espacios (mismo formato que
+  # scripts/explorar_cuentas_mega.py). En variable para que bash no interprete
+  # los metacaracteres del regex dentro de [[ ]].
+  local credencial_re='^([^[:space:];=,]+)[[:space:];=,]+(.*)$'
+  local comentario_re='^[[:space:]]*#'
+  local -A vistos=()
+  [[ -n "$fichero" && -f "$fichero" ]] || return 0
+  while IFS= read -r linea || [[ -n "$linea" ]]; do
+    linea="${linea%%$'\r'*}"
+    [[ "$linea" =~ $comentario_re ]] && continue
+    [[ -n "${linea//[[:space:]]/}" ]] || continue
+    if [[ "$linea" =~ $credencial_re ]]; then
+      email="${BASH_REMATCH[1]}"
+      pass="${BASH_REMATCH[2]}"
+    else
+      continue  # sin contraseña: no es una credencial utilizable
+    fi
+    pass="${pass#"${pass%%[![:space:]]*}"}"  # ltrim
+    pass="${pass%"${pass##*[![:space:]]}"}"  # rtrim
+    [[ -n "$email" && -n "$pass" ]] || continue
+    [[ -n "${vistos[${email,,}]:-}" ]] && continue
+    vistos[${email,,}]=1
+    printf '%s\t%s\n' "$email" "$pass"
+  done <"$fichero"
+}
+
+mega_intentar_login() {  # mega_intentar_login <email> <password> → 0 si hay sesión
+  local email="$1" pass="$2" salida rc=0 tmp
+  MEGA_PASSWORD_INTENTO="$pass"
+  # MEGAcmd mete bytes NUL en su salida (bash avisa al sustituirla y podría
+  # truncar el diagnóstico): se limpia con `tr`, y el login se vuelca a un
+  # temporal para que el rc registrado sea el de MEGAcmd y no el de `tr`.
+  tmp="$(mktemp)"
+  timeout 180 mega-login "$email" "$pass" >"$tmp" 2>&1 || rc=$?
+  salida="$(tr -d '\000' <"$tmp")"
+  rm -f "$tmp"
+  if [[ "$(cuenta_activa_mega)" == "$email" ]]; then
+    MEGA_LOGIN_DETALLE="ok"
+    return 0
+  fi
+  MEGA_LOGIN_DETALLE="rc=$rc $(mega_sanear "${salida:-sin salida}")"
+  return 1
 }
 
 cuenta_activa_mega() {
@@ -73,7 +134,9 @@ cuenta_activa_mega() {
 }
 
 asegurar_sesion_mega() {  # 0 = sesión utilizable · 4 = sin sesión/con credenciales malas
-  local cuenta actual previa salida rc_login=0
+  local cuenta actual previa candidato email pass
+  local -a candidatos=()
+  MEGA_CUENTAS_FICHERO="${MEGA_CUENTAS_FICHERO:-$MEGA_CUENTAS_POR_DEFECTO}"
   cuenta="$(cuenta_activa_mega)"
 
   if [[ -z "${MEGA_EMAIL:-}" ]]; then
@@ -90,6 +153,14 @@ asegurar_sesion_mega() {  # 0 = sesión utilizable · 4 = sin sesión/con creden
     return 0
   fi
 
+  # Candidatos del pool (otras cuentas de la rotación) para el failover. Se
+  # descarta la preferida porque ya se va a intentar primero.
+  while IFS=$'\t' read -r email pass; do
+    [[ -n "$email" && -n "$pass" ]] || continue
+    [[ "${email,,}" == "${MEGA_EMAIL,,}" ]] && continue
+    candidatos+=("$email"$'\t'"$pass")
+  done < <(mega_cuentas_pool)
+
   # Rotación de la semana. MEGAcmd admite UNA sola sesión y rechaza el `login`
   # si ya hay otra activa ("Already logged in"): se cierra la actual
   # CONSERVÁNDOLA (--keep-session) para poder retomarla si las credenciales
@@ -103,18 +174,37 @@ asegurar_sesion_mega() {  # 0 = sesión utilizable · 4 = sin sesión/con creden
       log "AVISO: no pude cerrar la sesión anterior: $(mega_sanear "$salida")"
     fi
   fi
+  unset salida
 
-  if salida="$(timeout 180 mega-login "$MEGA_EMAIL" "$MEGA_PASSWORD" 2>&1)"; then
-    rc_login=0
-  else
-    rc_login=$?
-  fi
-  actual="$(cuenta_activa_mega)"
-  if [[ "$actual" == "$MEGA_EMAIL" ]]; then
-    log "sesión MEGAcmd activa: $actual (rotación aplicada)"
+  if mega_intentar_login "$MEGA_EMAIL" "$MEGA_PASSWORD"; then
+    log "sesión MEGAcmd activa: $MEGA_EMAIL (rotación aplicada)"
     return 0
   fi
+  log "ERROR: no pude iniciar sesión con $MEGA_EMAIL ($MEGA_LOGIN_DETALLE)"
 
+  # Failover: la credencial de la semana puede estar caducada (pasa de verdad).
+  # Se prueba el resto del pool; el pre-vuelo decidirá después si esa cuenta ve
+  # la biblioteca del volcado.
+  if [[ ${#candidatos[@]} -gt 0 ]]; then
+    log "failover: probando ${#candidatos[@]} cuenta(s) del pool ($MEGA_CUENTAS_FICHERO)"
+    for candidato in "${candidatos[@]}"; do
+      email="${candidato%%$'\t'*}"
+      pass="${candidato#*$'\t'}"
+      if mega_intentar_login "$email" "$pass"; then
+        MEGA_PASSWORD_PREVIA="${MEGA_PASSWORD:-}"
+        MEGA_EMAIL="$email"
+        MEGA_PASSWORD="$pass"
+        MEGA_EMAIL_FUENTE="pool:$MEGA_CUENTAS_FICHERO (failover)"
+        log "failover de credenciales: sesión activa $email"
+        return 0
+      fi
+      log "failover: $email tampoco entra ($MEGA_LOGIN_DETALLE)"
+    done
+  elif [[ -n "$MEGA_CUENTAS_FICHERO" && ! -f "$MEGA_CUENTAS_FICHERO" ]]; then
+    log "AVISO: sin pool de cuentas ($MEGA_CUENTAS_FICHERO): no hay failover posible"
+  fi
+
+  actual="$(cuenta_activa_mega)"
   # Credenciales nuevas sin acceso: se retoma la sesión anterior para que el
   # pipeline siga pudiendo refrescar mientras se corrige la credencial.
   if [[ -n "$previa" && -z "$actual" ]]; then
@@ -122,7 +212,7 @@ asegurar_sesion_mega() {  # 0 = sesión utilizable · 4 = sin sesión/con creden
     timeout 180 mega-login "$previa" >/dev/null 2>&1 || true
     actual="$(cuenta_activa_mega)"
   fi
-  log "ERROR: no pude iniciar sesión con $MEGA_EMAIL (rc=$rc_login): $(mega_sanear "${salida:-sin salida}")"
+  log "ERROR: sin sesión MEGAcmd utilizable para $MEGA_EMAIL ni para el pool"
   [[ -n "$actual" ]] && log "AVISO: se mantiene la sesión $actual (el volcado puede seguir usándola)"
   return 4
 }

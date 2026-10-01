@@ -118,6 +118,39 @@ export interface SyncStatusOut {
   ultimo_escaneo: Record<string, unknown> | null;
 }
 
+/**
+ * Pre-vuelo de rotación MEGA (`GET /api/sync/cuentas`): lo escribe el host al
+ * refrescar el volcado y dice si las credenciales de la semana ven LA MISMA
+ * biblioteca. `disponible === false` solo significa que no hay informe (no es un
+ * fallo); la alarma es `ok === false` sin `forzado`.
+ */
+export interface CuentasEstadoOut {
+  disponible: boolean;
+  ok: boolean;
+  /** `inshare_ausente` | `buckets_ausentes` | `sin_sesion` | `null`. */
+  causa: string | null;
+  /** Frase legible del pre-vuelo (la usa el aviso en pantalla). */
+  veredicto: string | null;
+  /** El vaciado se permitió a propósito (`--permitir-otra-biblioteca`). */
+  forzado: boolean;
+  /** Cuenta MEGA con la que se verificó (rota cada semana). */
+  cuenta: string | null;
+  generado_en: string | null;
+  /** Antigüedad de esa comprobación, en horas. */
+  edad_horas: number | null;
+  volcado: string | null;
+  /** `etiquetas`, `rutas`, `titulos`, `files`, `buckets_esperados`. */
+  biblioteca: Record<string, unknown> | null;
+  faltan_rutas: string[];
+  faltan_buckets: Record<string, string[]>;
+  /**
+   * Nube personal de la cuenta de turno (`mega-ls /`): rota con las credenciales
+   * y NO entra al catálogo (solo se indexa la biblioteca).
+   */
+  nube_propia: { entradas?: number; nombres?: string[] } | null;
+  aviso: string | null;
+}
+
 export type TipoNovedad = "juego_nuevo" | "update_nuevo" | "dlc_nuevo" | "contenido_nuevo";
 
 export interface NovedadOut {
@@ -184,6 +217,7 @@ export interface NovedadesParams {
 export const api = {
   meta: () => getJSON<MetaOut>("/api/meta"),
   syncStatus: () => getJSON<SyncStatusOut>("/api/sync/status"),
+  cuentasEstado: () => getJSON<CuentasEstadoOut>("/api/sync/cuentas"),
   titles: (params: TitlesParams = {}) => {
     const sp = new URLSearchParams();
     if (params.q) sp.set("q", params.q);

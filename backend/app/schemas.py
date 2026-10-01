@@ -147,6 +147,33 @@ class SyncStatusOut(BaseModel):
     ultimo_escaneo: dict | None = None  # resumen del último diff aplicado
 
 
+class CuentasEstadoOut(BaseModel):
+    """Pre-vuelo de rotación MEGA: ¿la cuenta de la semana ve la biblioteca?
+
+    Informe que escribe el host (`scripts/verificar_rotacion.py`, vía
+    `make volcado`). `disponible=False` solo significa que no hay informe (pre-vuelo
+    desactivado o aún sin ejecutar) y NO es un fallo: la UI debe alarmar cuando
+    `ok` es False y no se forzó el vaciado.
+    """
+
+    disponible: bool = False
+    ok: bool = True
+    causa: str | None = None  # inshare_ausente | buckets_ausentes | sin_sesion | None
+    veredicto: str | None = None  # frase legible del pre-vuelo
+    forzado: bool = False  # se continuó a propósito (--permitir-otra-biblioteca)
+    cuenta: str | None = None  # cuenta MEGA de la semana
+    generado_en: str | None = None  # cuándo se comprobó (ISO 8601)
+    edad_horas: float | None = None  # antigüedad de esa comprobación
+    volcado: str | None = None  # volcado contra el que se verificó
+    biblioteca: dict | None = None  # etiquetas, rutas, títulos, archivos, buckets
+    faltan_rutas: list[str] = []
+    faltan_buckets: dict[str, list[str]] = {}
+    # Nube personal de la cuenta de turno (`mega-ls /`): rotan con las
+    # credenciales y NO entran al catálogo (`entradas`, `nombres`).
+    nube_propia: dict | None = None
+    aviso: str | None = None  # explicación lista para la UI
+
+
 class SyncRunOut(BaseModel):
     ok: bool
     snapshot: SnapshotOut | None = None

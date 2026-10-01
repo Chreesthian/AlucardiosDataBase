@@ -10,11 +10,11 @@ export const BASE_URL = process.env.BASE_URL ?? "http://127.0.0.1:7440";
  * (`make volcado`) basta actualizar este objeto.
  */
 export const VOLCADO = {
-  files: 31263,
-  folders: 15869,
-  titles: 5448,
-  bytes: 17639024105947,
-  letraA: 663,
+  files: 31608,
+  folders: 16029,
+  titles: 5494,
+  bytes: 17852593085854,
+  letraA: 668,
 };
 
 /** GET a la API (desde Node) con control de error. */

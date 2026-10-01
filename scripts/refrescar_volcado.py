@@ -62,7 +62,11 @@ RAICES_FIJAS = [
 ]
 
 _RE_CUENTA = re.compile(r"Account e-mail:\s*(\S+)")
-_RE_INSHARE = re.compile(r"^INSHARE on (\S+)", re.MULTILINE)
+# El nombre del compartido puede llevar espacios (`INSHARE on
+# //from/dueño@gmail.com:ORTIK 90 (read access)`): se captura la ruta completa y
+# solo se descarta el sufijo del nivel de acceso. Si se cortara en el primer
+# espacio, la ruta no existiría y el refresco moriría con "Couldn't find".
+_RE_INSHARE = re.compile(r"^INSHARE on (.+?)\s*(?:\([^)]*\))?$", re.MULTILINE)
 
 
 def _binario(nombre: str, mega_bin: Path) -> str:
@@ -265,6 +269,44 @@ def validar_sectores_simples(viejo_texto: str, texto_nuevo: str) -> tuple[list[s
     return sorted(viejos - nuevos), sorted(nuevos - viejos)
 
 
+def titulos_por_sector(texto: str) -> dict[str, int] | None:
+    """{etiqueta de sector: títulos} del árbol, o None sin el entorno del backend.
+
+    "Título" = carpeta de juego que cuelga de un bucket: la MISMA definición que usa
+    la ingesta (`app.ingest.role_of`), así que el recuento del host y el de la BD
+    (`Node.role == "title"`) son comparables.
+    """
+    try:
+        from app.ingest import contar_titulos_por_sector  # import diferido
+    except ImportError:
+        return None
+    return contar_titulos_por_sector(parse_text(texto))
+
+
+def validar_titulos(viejo_path: Path, texto_nuevo: str, fraccion: float) -> tuple[bool, str]:
+    """(ok, detalle): ¿el candidato conserva la COBERTURA de títulos del vigente?
+
+    El guard de sectores solo mira etiquetas presentes/ausentes: un share
+    re-compartido a medias mantiene los sectores pero con menos juegos dentro, y
+    aplicarlo borraría títulos (y su IGDB) del catálogo. Aquí se compara el número
+    de títulos. `--min-titulos-fraccion 0` (o `--permitir-titulos-perdidos`) lo
+    desactiva cuando la pérdida es intencionada.
+    """
+    if fraccion <= 0 or not viejo_path.exists():
+        return True, ""
+    viejo = titulos_por_sector(viejo_path.read_text(encoding="utf-8"))
+    nuevo = titulos_por_sector(texto_nuevo)
+    if viejo is None or nuevo is None:
+        return True, "cobertura de títulos sin comprobar (falta el entorno del backend)"
+    total_viejo, total_nuevo = sum(viejo.values()), sum(nuevo.values())
+    if total_viejo and total_nuevo < total_viejo * fraccion:
+        return False, (
+            f"el candidato trae {total_nuevo} títulos frente a {total_viejo} del vigente "
+            f"(< {fraccion:.0%})"
+        )
+    return True, f"títulos: {total_nuevo} (vigente: {total_viejo})"
+
+
 
 def resumen_diff(viejo_path: Path, texto_nuevo: str) -> bool:
     """Imprime el diff vigente → candidato. Devuelve False si procede abortar."""
@@ -318,6 +360,19 @@ def main() -> int:
         help="Permite perder sectores con archivos (p. ej. la cuenta nueva no monta "
         "el share): por defecto se aborta para no vaciar media biblioteca",
     )
+    ap.add_argument(
+        "--min-titulos-fraccion",
+        type=float,
+        default=float(os.environ.get("ALUCARD_MIN_TITULOS_FRACCION", "0.9")),
+        help="Fracción mínima de TÍTULOS (carpetas de juego) que debe conservar el "
+        "candidato frente al volcado vigente (def. 0.9; 0 = sin límite): cubre el "
+        "share re-compartido a medias, que mantiene los sectores pero pierde juegos",
+    )
+    ap.add_argument(
+        "--permitir-titulos-perdidos",
+        action="store_true",
+        help="Permite escribir aunque el candidato pierda títulos de la biblioteca",
+    )
     ap.add_argument("--no-backup", action="store_true", help="No guarda copia .bak del vigente")
     args = ap.parse_args()
 
@@ -363,6 +418,19 @@ def main() -> int:
             print("     → si la pérdida es intencionada: --permitir-sectores-perdidos")
             return 1
         print(f"   ⚠ pérdida de sectores permitida: {', '.join(sin_explicar)}")
+
+    # Cobertura de la biblioteca: mismo share y mismos sectores, pero menos juegos
+    # (re-compartido a medias) → se aborta antes de escribir.
+    cobertura_ok, detalle_titulos = validar_titulos(out, texto, args.min_titulos_fraccion)
+    if detalle_titulos:
+        print(f"   · {detalle_titulos}")
+    if not cobertura_ok:
+        if not args.permitir_titulos_perdidos:
+            print(f"   ✖ {detalle_titulos}: NO se escribe nada")
+            print("     → ¿el share se ha re-compartido incompleto? Revisa la cuenta de la semana.")
+            print("     → si la pérdida es intencionada: --permitir-titulos-perdidos")
+            return 1
+        print(f"   ⚠ pérdida de títulos permitida: {detalle_titulos}")
     try:
         procede = resumen_diff(out, texto)
     except ImportError:

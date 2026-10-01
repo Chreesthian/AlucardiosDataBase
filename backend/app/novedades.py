@@ -35,12 +35,12 @@ from sqlalchemy.orm import Session
 
 from .config import settings
 from .db import build_engine, create_schema
-from .ingest import bucket_letter, classify_version
+from .ingest import bucket_letter, classify_version, is_bucket
 from .library import current_snapshot
 from .models import Node, Novedad, Title
 from .normalize import slugify
 from .parser import Node as PNode
-from .parser import parse_file
+from .parser import es_biblioteca, parse_file
 from .safefs import atomic_write_text
 
 log = logging.getLogger("alucard.novedades")
@@ -57,9 +57,18 @@ DETALLE_MAX = 200
 
 
 def titulo_de(path: str) -> str | None:
-    """Ruta del título (sector/bucket/título) al que pertenece `path`."""
+    """Ruta del título (sector/bucket/título) al que pertenece `path`.
+
+    Solo cuenta la BIBLIOTECA: el primer segmento tiene que ser un in-share
+    (`INSHARE dueño:carpeta`) y el segundo un bucket (`-- X`). El contenido
+    propio de la cuenta (nube, inbox, papelera) no es un título y no puede
+    generar eventos ni siquiera cuando un volcado lo trae — por ejemplo al
+    reconstruir un periodo con `--desde/--hasta` sobre volcados antiguos.
+    """
     partes = path.split("/")
-    return "/".join(partes[:3]) if len(partes) >= 3 else None
+    if len(partes) < 3 or not es_biblioteca(partes[0]) or not is_bucket(partes[1]):
+        return None
+    return "/".join(partes[:3])
 
 
 def tipo_de(version: str | None, *, titulo_nuevo: bool) -> str:

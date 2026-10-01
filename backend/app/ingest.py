@@ -20,6 +20,7 @@ import argparse
 import json
 import re
 from collections import Counter
+from collections.abc import Iterable
 from itertools import count
 from pathlib import Path
 
@@ -30,7 +31,7 @@ from .db import build_engine, create_schema
 from .models import Node, Snapshot, Title
 from .normalize import normalize, slugify
 from .parser import Node as PNode
-from .parser import ParsedDump, parse_file
+from .parser import ParsedDump, es_biblioteca, parse_file
 
 _BUCKET_RE = re.compile(r"^-- (?P<letter>.+)$")
 _BASE_RE = re.compile(r"^(B-ASE|BASE)\b", re.IGNORECASE)
@@ -76,6 +77,47 @@ def next_letter(parent_role: str | None, child: PNode, current: str) -> str:
     return current
 
 
+def contar_titulos_por_sector(
+    parsed: ParsedDump, *, sectores: Iterable[str] | None = None
+) -> dict[str, int]:
+    """{etiqueta de sector: nº de títulos} sin tocar la BD.
+
+    Un "título" es la carpeta de juego que cuelga de un bucket, la MISMA
+    definición que usa la ingesta (`role_of`) y por tanto que las filas
+    `Node.role == "title"`. Sirve para comparar la COBERTURA de la biblioteca
+    (host: script del volcado) con la del catálogo (BD: `app.sync`) sin abrir
+    SQLite.
+
+    `sectores` limita el recuento a esas etiquetas: el guard de cobertura del
+    escaneo cuenta solo los sectores de la biblioteca, porque los títulos de la
+    nube personal de la cuenta no forman parte del catálogo.
+    """
+    filtro = None if sectores is None else {s.strip() for s in sectores}
+
+    def walk(nodo: PNode, parent_role: str | None, total: list[int]) -> None:
+        role = role_of(parent_role, nodo)
+        if role == "title":
+            total[0] += 1
+        if nodo.is_folder:
+            for hijo in nodo.children:
+                walk(hijo, role, total)
+
+    out: dict[str, int] = {}
+    for sector in parsed.sectors:
+        if filtro is not None and sector.label not in filtro:
+            continue
+        total = [0]
+        for root in sector.roots:
+            walk(root, None, total)
+        out[sector.label] = out.get(sector.label, 0) + total[0]
+    return out
+
+
+def contar_titulos(parsed: ParsedDump, *, sectores: Iterable[str] | None = None) -> int:
+    """Total de títulos del volcado (ver `contar_titulos_por_sector`)."""
+    return sum(contar_titulos_por_sector(parsed, sectores=sectores).values())
+
+
 def _subtree_exts(node: PNode, acc: Counter) -> None:
     if not node.is_folder:
         if node.ext:
@@ -88,7 +130,16 @@ def _subtree_exts(node: PNode, acc: Counter) -> None:
 def ingest(
     engine, dump: ParsedDump, *, source_kind: str = "dump", source_path: str | None = None
 ) -> Snapshot:
-    """Persiste un ParsedDump como Snapshot nuevo. Devuelve el Snapshot."""
+    """Persiste un ParsedDump como Snapshot nuevo. Devuelve el Snapshot.
+
+    Al catálogo entran solo los sectores de la BIBLIOTECA (`parser.es_biblioteca`,
+    es decir los in-shares): el volcado también trae la nube personal de la cuenta
+    que lo generó (CLOUD_DRIVE, INBOX, RUBBISH_BIN) y esas credenciales rotan cada
+    semana, así que indexarla ensuciaría el catálogo (y "Novedades") en cada
+    rotación. Los totales del snapshot describen, por tanto, el catálogo.
+    """
+    sectores = [sec for sec in dump.sectors if es_biblioteca(sec.label)]
+    totales = dump.totals(sectores=[sec.label for sec in sectores])
     snapshot = Snapshot(
         account=dump.account,
         tool=dump.tool,
@@ -97,9 +148,9 @@ def ingest(
         source_path=source_path,
         content_sha256=dump.sha256,
         status="ok",
-        file_count=dump.file_count,
-        folder_count=dump.folder_count,
-        total_size=dump.total_size,
+        file_count=totales["files"],
+        folder_count=totales["folders"],
+        total_size=totales["size"],
     )
     order = count()
     created: list[tuple[PNode, Node]] = []
@@ -124,7 +175,7 @@ def ingest(
         session.add(snapshot)
         session.flush()
 
-        for sec in dump.sectors:
+        for sec in sectores:
             for root in sec.roots:
                 walk(root, None, None, "", root.name)
 

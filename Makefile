@@ -1,7 +1,7 @@
 # Makefile de AlucardiosDataBase
 SHELL := /bin/bash
 
-.PHONY: help build up down ps logs restart dev test lint clean volcado novedades
+.PHONY: help build up down ps logs restart dev test lint clean volcado novedades pre-vuelo rotacion
 
 help: ## Muestra esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
@@ -58,6 +58,12 @@ volcado-cron-off: ## Quita el refresco automático del volcado
 
 volcado-estado: ## Último resultado del refresco automático del volcado
 	./scripts/autovolcado.sh --estado
+
+pre-vuelo: ## ¿La cuenta MEGA de la semana ve la biblioteca del volcado? (host, sin tocar el volcado)
+	cd backend && uv run python ../scripts/verificar_rotacion.py
+
+rotacion: ## Failover: deja la sesión en la cuenta del pool que SÍ ve la biblioteca
+	cd backend && uv run python ../scripts/verificar_rotacion.py --elegir-cuenta
 
 credenciales: ## Guarda las credenciales MEGA de la semana (rotan semanalmente)
 	./scripts/autovolcado.sh --set-cred

@@ -58,6 +58,19 @@ class Settings(BaseSettings):
     # Fracción mínima de archivos que debe conservar un volcado para aplicarse
     # (protege de escrituras a medias y de bajadas masivas no intencionadas).
     sync_min_fraccion: float = 0.5
+    # Fracción mínima de TÍTULOS (carpetas de juego) que debe conservar un
+    # volcado. Un share re-compartido a medias, o una cuenta que ve menos
+    # sectores, puede traer muchos archivos (pasa el guard anterior) y aun así
+    # dejar el catálogo mutilado: esto lo corta antes del diff. 0 lo desactiva.
+    sync_min_titulos_fraccion: float = 0.9
+
+    # ── Pre-vuelo de rotación MEGA (host) ──────────────────
+    # `scripts/verificar_rotacion.py` (host, vía `make volcado`) deja aquí su
+    # veredicto para que la API lo publique en `GET /api/sync/cuentas` y la UI
+    # pueda avisar cuando las credenciales de la semana montan OTRA biblioteca.
+    # Por defecto, junto a la BD (`data/estado_cuentas.json`); en Docker se monta
+    # el `data/` del host en solo lectura y se apunta con esta variable.
+    estado_cuentas_path: Path | None = None
 
     # ── IGDB / GamesDb (metadatos, fase F4) ────────────────
     # Credenciales IGDB (Twitch) con los mismos nombres que el proyecto anterior
@@ -103,6 +116,14 @@ class Settings(BaseSettings):
         db = self.resolved_db_path
         db.parent.mkdir(parents=True, exist_ok=True)
         return f"sqlite:///{db}"
+
+    @property
+    def resolved_estado_cuentas(self) -> Path:
+        """Informe del pre-vuelo de rotación (por defecto, junto a la BD)."""
+        if self.estado_cuentas_path is not None:
+            p = Path(self.estado_cuentas_path)
+            return p if p.is_absolute() else (project_root() / p).resolve()
+        return self.resolved_db_path.parent / "estado_cuentas.json"
 
     @property
     def cors_origin_list(self) -> list[str]:

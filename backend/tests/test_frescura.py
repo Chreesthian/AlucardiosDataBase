@@ -158,6 +158,7 @@ def test_sync_aborta_volcado_truncado(tmp_path):
     )
     with pytest.raises(RuntimeError, match="Volcado sospechoso"):
         refresh_text(app.state.engine, solo_uno)
-    # Con el guard desactivado (bajada consciente) sí se aplica.
-    stats = refresh_text(app.state.engine, solo_uno, min_fraccion=0)
+    # Con el guard de archivos desactivado (bajada consciente) sí se aplica; se
+    # desactiva también la cobertura de títulos para aislar el blindaje 2.
+    stats = refresh_text(app.state.engine, solo_uno, min_fraccion=0, min_titulos_fraccion=0)
     assert stats["removed_files"] > 0

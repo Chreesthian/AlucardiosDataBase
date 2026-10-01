@@ -145,6 +145,26 @@ make credenciales     # guarda MEGA_EMAIL/MEGA_PASSWORD de la semana (chmod 600)
 - Si la sesión activa es de otra cuenta, `scripts/lib/mega_session.sh` se
   re-loguea solo (login primero; si falla **restaura** la sesión previa y sale
   rc=4, así el host nunca se queda sin MEGAcmd).
+- Antes de listar nada, `scripts/verificar_rotacion.py` hace un **pre-vuelo** en
+  segundos (`mega-mount` + un `mega-ls` NO recursivo) y comprueba que la sesión
+  activa monta el in-share del volcado vigente y que su raíz conserva los mismos
+  buckets: si las credenciales de la semana montan OTRA biblioteca aborta con
+  **rc=8** sin gastar minutos en `mega-ls -R -l` ni tocar el volcado. El veredicto
+  se escribe en `data/estado_cuentas.json` (`ALUCARD_PREFLIGHT=0` lo desactiva) y
+  lo publica `GET /api/sync/cuentas`, que es lo que usa `/novedades` para avisar
+  cuando la cuenta de la semana no ve la biblioteca.
+- **Failover guiado por la biblioteca (`make rotacion`)**: entrar en MEGA y *ver*
+  la biblioteca son cosas distintas — una cuenta del pool puede entrar y montar
+  otro share, así que quien decide es el pre-vuelo. Cuando la credencial de la
+  semana pasa el pre-vuelo sin ver la biblioteca, `autovolcado.sh` prueba el pool
+  (`~/.config/alucard/mega_cuentas.txt`, `ALUCARD_MEGA_CUENTAS`) cuenta por cuenta
+  con ese mismo pre-vuelo y deja la sesión en la primera que **sí** la ve
+  (`verificar_rotacion.py --elegir-cuenta`), de modo que el cron sigue refrescando
+  en vez de fallar cada 6 h. Si ninguna cuenta del pool la ve, se **restaura** la
+  credencial preferida y se aborta con rc=8 igual que antes.
+  `ALUCARD_ROTACION=0` desactiva el failover y `ALUCARD_ROTACION_PERSISTIR=1`
+  guarda además la cuenta elegida como credencial preferida (chmod 600, fuera del
+  repo); ninguna contraseña llega al informe, al log ni a la API.
 - `refrescar_volcado.py` aborta (rc=1, sin escribir nada) si el candidato pierde
   un sector que hoy trae archivos: unas credenciales sin acceso a la biblioteca
   no pueden vaciar el catálogo. `--permitir-sectores-perdidos` lo permite a
@@ -154,6 +174,16 @@ make credenciales     # guarda MEGA_EMAIL/MEGA_PASSWORD de la semana (chmod 600)
   altas/bajas: ni "Novedades" fantasma ni re-enriquecido IGDB. `GET
   /api/sync/status` informa del `dump_fuente` estable junto a la `account`
   rotativa, y `/novedades` lo muestra.
+- **Solo se indexa la biblioteca.** El volcado también trae los sectores de la
+  CUENTA que lo generó (`CLOUD_DRIVE`, `INBOX`, `RUBBISH_BIN`), y esa nube
+  personal cambia con la rotación semanal. `app.sync`/`app.ingest` se quedan solo
+  con los sectores de biblioteca (`INSHARE …`): esos archivos no entran al
+  catálogo, no aparecen en "Novedades" y no mueven los totales publicados. Cada
+  escaneo dice cuánto se ha ignorado (`stats["ignorados_fuera_biblioteca"]`, al
+  log y por consola) y el pre-vuelo publica cuántas entradas tiene la cuenta
+  actual fuera de la biblioteca (`nube_propia` en `GET /api/sync/cuentas`, visible
+  en `/novedades`). Una base de datos que ya tuviera ese ruido se limpia en el
+  siguiente escaneo.
 - **Renombrado del share (p. ej. `BCKP1` → `BCKP2`)**: cuando desaparece un share
   y aparece otro con contenido equivalente, `app.sync` detecta la rotación,
   remapea las rutas guardadas y reinicia los enlaces de descarga cacheados
@@ -184,8 +214,9 @@ frontend hornea `PUBLIC_BACKEND_HOST`/`PUBLIC_BACKEND_PORT` (ver
 
 El `Makefile` agrupa los flujos principales: `make enrich`, `make sync`,
 `make export`, `make catalog`, `make volcado`, `make volcado-auto`,
-`make volcado-cron`, `make sync-status`, `make versiones`,
-`make versiones-daemon`, `make test`, `make lint` y `make e2e`.
+`make volcado-cron`, `make sync-status`, `make pre-vuelo`, `make rotacion`,
+`make versiones`, `make versiones-daemon`, `make test`, `make lint` y
+`make e2e`.
 
 ## Documentación
 

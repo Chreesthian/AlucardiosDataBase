@@ -38,18 +38,25 @@ from sqlalchemy.orm import Session
 
 from .config import settings
 from .db import build_engine, create_schema
-from .ingest import bucket_letter, classify_version, ingest, is_bucket
+from .ingest import bucket_letter, classify_version, contar_titulos, ingest, is_bucket
 from .models import DownloadLink, Node, Snapshot, SyncLog, Title
 from .normalize import normalize, slugify
 from .novedades import registrar_novedades
 from .parser import Node as PNode
-from .parser import ParsedDump, parse_text
+from .parser import ParsedDump, es_biblioteca, parse_text
 
 log = logging.getLogger("alucard.sync")
 
 
 def _collect(parsed: ParsedDump) -> dict[str, PNode]:
-    """Rutas deseadas tras el nuevo escaneo (path → PNode del parser)."""
+    """Rutas del CATÁLOGO tras el nuevo escaneo (path → PNode del parser).
+
+    Solo los sectores de la biblioteca (`parser.es_biblioteca`): el volcado trae
+    además la nube personal de la cuenta que lo generó (CLOUD_DRIVE, INBOX,
+    RUBBISH_BIN) y esas credenciales rotan cada semana, así que indexarla
+    añadiría/borraría nodos ajenos en cada rotación y los registraría como
+    "Novedades". Lo descartado se cuenta en `_fuera_de_biblioteca`.
+    """
     nuevo: dict[str, PNode] = {}
 
     def walk(n: PNode, path: str) -> None:
@@ -58,9 +65,32 @@ def _collect(parsed: ParsedDump) -> dict[str, PNode]:
             walk(c, f"{path}/{c.name}")
 
     for sec in parsed.sectors:
+        if not es_biblioteca(sec.label):
+            continue
         for root in sec.roots:
             walk(root, root.name)
     return nuevo
+
+
+def _fuera_de_biblioteca(parsed: ParsedDump) -> dict[str, dict]:
+    """{sector: {files, folders, bytes}} de lo que NO es la biblioteca.
+
+    Carpetas propias de la cuenta de turno (nube, papelera, inbox) más las
+    raíces de los sectores sin biblioteca. No entran al catálogo; se cuentan
+    para que el resumen del escaneo explique por qué los totales del volcado no
+    coinciden con los del catálogo.
+    """
+    fuera: dict[str, dict] = {}
+    for sec in parsed.sectors:
+        if es_biblioteca(sec.label):
+            continue
+        files = folders = size = 0
+        for root in sec.roots:
+            files += root.total_files
+            folders += root.total_folders
+            size += root.total_size
+        fuera[sec.label] = {"files": files, "folders": folders, "bytes": size}
+    return fuera
 
 
 # ── Rotación de share (credenciales semanales) ───────────────────────────────
@@ -162,6 +192,7 @@ def refresh(
     source_path: str | None = None,
     allow_empty: bool = False,
     min_fraccion: float = 0.5,
+    min_titulos_fraccion: float | None = None,
 ) -> dict:
     """Actualiza la BD por diferencias. Devuelve resumen del escaneo.
 
@@ -172,7 +203,31 @@ def refresh(
     `1 - min_fraccion` de los archivos actuales se aborta, porque eso es lo que
     produce un volcado a medio escribir (el refresco se escribe EN SITIO sobre el
     inodo que monta Docker). `min_fraccion=0` desactiva la comprobación.
+    Blindaje 3 (cobertura de la biblioteca): si el volcado pierde más de
+    `1 - min_titulos_fraccion` de los TÍTULOS actuales se aborta. Cubre el caso que
+    el guard de archivos deja pasar: el share re-compartido a medias o la cuenta
+    que ve menos buckets (muchos archivos, pero el catálogo mutilado). `None` usa
+    `settings.sync_min_titulos_fraccion`; `0` desactiva la comprobación.
+
+    Al catálogo entran solo los sectores de la BIBLIOTECA (in-shares): los
+    sectores propios de la cuenta que volcó (nube, inbox, papelera) cambian con
+    cada rotación de credenciales y se ignoran, dejando su recuento en
+    `stats["ignorados_fuera_biblioteca"]`. Los totales publicados
+    (`total_files`/`total_folders` y el snapshot) describen el catálogo; los del
+    volcado crudo van en `total_files_volcado`/`total_folders_volcado`. Los tres
+    blindajes se evalúan contra la biblioteca del volcado nuevo.
     """
+    if min_titulos_fraccion is None:
+        min_titulos_fraccion = settings.sync_min_titulos_fraccion
+    biblioteca = parsed.sectores_biblioteca()
+    totales = parsed.totals(sectores=biblioteca)
+    ignorados = _fuera_de_biblioteca(parsed)
+    propios = {etiqueta: v["files"] for etiqueta, v in ignorados.items() if v["files"]}
+    if propios:
+        log.warning(
+            "contenido propio de la cuenta fuera de la biblioteca (no entra al catálogo): %s",
+            ", ".join(f"{etiqueta} ({n} archivos)" for etiqueta, n in propios.items()),
+        )
     stats = {
         "kind": kind,
         "source_path": source_path,
@@ -184,8 +239,12 @@ def refresh(
         "removed_folders": 0,
         "novedades": 0,
         "rotados": [],
-        "total_files": parsed.file_count,
-        "total_folders": parsed.folder_count,
+        # Totales del catálogo (biblioteca) y del volcado completo.
+        "total_files": totales["files"],
+        "total_folders": totales["folders"],
+        "total_files_volcado": parsed.file_count,
+        "total_folders_volcado": parsed.folder_count,
+        "ignorados_fuera_biblioteca": ignorados,
     }
 
     with Session(engine) as session:
@@ -197,8 +256,8 @@ def refresh(
             # Primera vez: ingesta completa (bootstrap), no hay nada que destruir.
             ingest(engine, parsed, source_kind=kind, source_path=source_path)
             stats["bootstrap"] = True
-            stats["added_files"] = parsed.file_count
-            stats["added_folders"] = parsed.folder_count
+            stats["added_files"] = totales["files"]
+            stats["added_folders"] = totales["folders"]
             return stats
 
         sid = snap.id
@@ -223,7 +282,7 @@ def refresh(
 
         # Blindaje: un volcado vacío/truncado NUNCA debe vaciar la biblioteca.
         actuales_archivos = sum(1 for r in filas if r.kind == "file")
-        if actuales_archivos and parsed.file_count == 0 and not allow_empty:
+        if actuales_archivos and totales["files"] == 0 and not allow_empty:
             raise RuntimeError(
                 "Volcado sin archivos (file_count=0) pero la BD tiene "
                 f"{actuales_archivos} archivos → se ABORTA para no borrar nada. "
@@ -233,15 +292,36 @@ def refresh(
         if (
             actuales_archivos
             and min_fraccion > 0
-            and parsed.file_count < actuales_archivos * min_fraccion
+            and totales["files"] < actuales_archivos * min_fraccion
             and not allow_empty
         ):
             raise RuntimeError(
-                f"Volcado sospechoso: {parsed.file_count} archivos frente a "
+                f"Volcado sospechoso: {totales['files']} archivos frente a "
                 f"{actuales_archivos} en la BD (< {min_fraccion:.0%}) → se ABORTA "
                 "para no borrar media biblioteca (¿escritura en curso o volcado a "
                 "medias?). Reintenta cuando el refresco acabe; si la bajada es "
                 "intencionada, usa --min-fraccion 0 o --allow-vacio."
+            )
+
+        # Blindaje 3: COBERTURA de la biblioteca. Un share re-compartido a medias
+        # (o una cuenta que ve menos buckets) trae archivos de sobra —el guard de
+        # arriba no lo ve— y sin embargo borraría juegos del catálogo. Los títulos
+        # se cuentan con la misma definición que la ingesta (`role_of`).
+        actuales_titulos = sum(1 for r in filas if r.role == "title")
+        titulos_nuevos = contar_titulos(parsed, sectores=biblioteca)
+        if (
+            actuales_titulos
+            and min_titulos_fraccion > 0
+            and titulos_nuevos < actuales_titulos * min_titulos_fraccion
+            and not allow_empty
+        ):
+            raise RuntimeError(
+                f"Volcado incompleto: {titulos_nuevos} títulos frente a "
+                f"{actuales_titulos} en la BD (< {min_titulos_fraccion:.0%}) → se "
+                "ABORTA para no borrar juegos del catálogo (¿share re-compartido a "
+                "medias o credenciales que no ven toda la biblioteca?). Revisa "
+                "`data/estado_cuentas.json`; si la bajada es intencionada, usa "
+                "--min-titulos-fraccion 0 o --allow-vacio."
             )
 
         # 1) SUSTRACCIÓN: rutas que ya no existen en el escaneo.
@@ -304,9 +384,9 @@ def refresh(
         session.flush()
         stats["novedades"] = registrar_novedades(session, sid, añadidos, nuevo)
 
-        snap.file_count = parsed.file_count
-        snap.folder_count = parsed.folder_count
-        snap.total_size = parsed.total_size
+        snap.file_count = totales["files"]
+        snap.folder_count = totales["folders"]
+        snap.total_size = totales["size"]
         snap.content_sha256 = parsed.sha256
         # Cabecera del volcado vigente: el volcado se regenera (nueva fecha,
         # cuenta y herramienta) y el snapshot debe reflejarlo, no quedar con la
@@ -327,8 +407,8 @@ def refresh(
                 changed_files=stats["changed_files"],
                 added_folders=stats["added_folders"],
                 removed_folders=stats["removed_folders"],
-                total_files=parsed.file_count,
-                total_folders=parsed.folder_count,
+                total_files=totales["files"],
+                total_folders=totales["folders"],
             )
         )
         session.commit()
@@ -458,6 +538,7 @@ def refresh_file(
     kind: str = "dump",
     allow_empty: bool = False,
     min_fraccion: float = 0.5,
+    min_titulos_fraccion: float | None = None,
 ) -> dict:
     """Lee el volcado UNA sola vez (hash y parse del MISMO texto) y sincroniza."""
     texto = path.read_text(encoding="utf-8")
@@ -469,6 +550,7 @@ def refresh_file(
         source_path=str(path),
         allow_empty=allow_empty,
         min_fraccion=min_fraccion,
+        min_titulos_fraccion=min_titulos_fraccion,
     )
 
 
@@ -479,6 +561,7 @@ def refresh_text(
     kind: str = "dump",
     allow_empty: bool = False,
     min_fraccion: float = 0.5,
+    min_titulos_fraccion: float | None = None,
 ) -> dict:
     return refresh(
         engine,
@@ -487,6 +570,7 @@ def refresh_text(
         source_path=None,
         allow_empty=allow_empty,
         min_fraccion=min_fraccion,
+        min_titulos_fraccion=min_titulos_fraccion,
     )
 
 
@@ -617,13 +701,23 @@ def comprobar_frescura(path: Path, max_edad_horas: int, *, tolerar: bool = False
 
 
 def _una_pasada(
-    engine, path: Path, exportar: bool, allow_vacio: bool = False, min_fraccion: float = 0.5
+    engine,
+    path: Path,
+    exportar: bool,
+    allow_vacio: bool = False,
+    min_fraccion: float = 0.5,
+    min_titulos_fraccion: float | None = None,
 ) -> dict:
     info = frescura(path)
     edad = "?" if info["edad_horas"] is None else f"{info['edad_horas']:.1f}"
     print(f"Volcado: {info['generated_at'] or 'sin cabecera'} (hace {edad} h, origen={info['origen']})")
     stats = refresh_file(
-        engine, path, kind="dump", allow_empty=allow_vacio, min_fraccion=min_fraccion
+        engine,
+        path,
+        kind="dump",
+        allow_empty=allow_vacio,
+        min_fraccion=min_fraccion,
+        min_titulos_fraccion=min_titulos_fraccion,
     )
     print(
         f"[{stats['kind']}] bootstrap={stats['bootstrap']} | "
@@ -632,6 +726,16 @@ def _una_pasada(
         f"~{stats['changed_files']} cambiados | novedades={stats.get('novedades', 0)}"
     )
     print(f"Estado final: {stats['total_files']} archivos, " f"{stats['total_folders']} carpetas.")
+    ajenos = {
+        k: v for k, v in (stats.get("ignorados_fuera_biblioteca") or {}).items() if v.get("files")
+    }
+    if ajenos:
+        detalle = ", ".join(f"{etiqueta}: {v['files']} archivos" for etiqueta, v in ajenos.items())
+        print(
+            f"Fuera de la biblioteca (nube propia de la cuenta, NO indexado): {detalle} "
+            f"→ volcado completo: {stats['total_files_volcado']} archivos, "
+            f"{stats['total_folders_volcado']} carpetas."
+        )
     if stats.get("rotados"):
         pares = ", ".join(f"{v} → {n}" for v, n in stats["rotados"])
         print(f"Rotación de share remapada (misma biblioteca): {pares}")
@@ -693,6 +797,15 @@ def main() -> None:
         help="Fracción mínima de archivos que debe conservar el volcado para "
         f"aplicarse (def. {settings.sync_min_fraccion}; 0 = sin límite)",
     )
+    ap.add_argument(
+        "--min-titulos-fraccion",
+        type=float,
+        default=settings.sync_min_titulos_fraccion,
+        help="Fracción mínima de TÍTULOS que debe conservar el volcado para "
+        f"aplicarse (def. {settings.sync_min_titulos_fraccion}; 0 = sin límite). "
+        "Un share re-compartido a medias puede traer muchos archivos y aun así "
+        "perder juegos: esto lo corta antes del diff.",
+    )
     args = ap.parse_args()
 
     logging.basicConfig(
@@ -709,7 +822,14 @@ def main() -> None:
         # Escaneo manual: se aplica aunque el volcado esté viejo (lo pidió el
         # operador), pero el aviso queda registrado como ERROR.
         comprobar_frescura(path, args.max_edad, tolerar=True)
-        _una_pasada(engine, path, args.export, args.allow_vacio, args.min_fraccion)
+        _una_pasada(
+            engine,
+            path,
+            args.export,
+            args.allow_vacio,
+            args.min_fraccion,
+            args.min_titulos_fraccion,
+        )
         return
 
     # ── Modo daemon autónomo: espera a que el volcado cambie en disco. ──
@@ -735,7 +855,14 @@ def main() -> None:
                 huella = _huella(path)
                 if huella != ultima_huella:
                     ultima_huella = huella
-                    _una_pasada(engine, path, args.export, args.allow_vacio, args.min_fraccion)
+                    _una_pasada(
+                        engine,
+                        path,
+                        args.export,
+                        args.allow_vacio,
+                        args.min_fraccion,
+                        args.min_titulos_fraccion,
+                    )
                 else:
                     log.info(
                         "volcado sin cambios (huella=%s…); próxima comprobación en %ss",
