@@ -33,9 +33,43 @@ def build_engine(database_url: str) -> Engine:
     return create_engine(database_url, pool_pre_ping=True, future=True)
 
 
+# Columnas añadidas DESPUÉS de la primera versión de cada tabla. `create_all` no
+# toca tablas ya existentes, así que las bases desplegadas (alucard.db, retro.db)
+# se pondrían al día solas con un `ALTER TABLE … ADD COLUMN` (idempotente) al
+# arrancar cualquier proceso (API, workers, CLI). SQLite añade columnas NULL sin
+# reescribir la tabla, así que es instantáneo y no pierde datos.
+_COLUMNAS_NUEVAS: dict[str, dict[str, str]] = {
+    "titles": {
+        "igdb_name": "TEXT",
+        "igdb_name_norm": "TEXT",
+        "igdb_year": "INTEGER",
+    },
+}
+
+
+def migrar_esquema(engine: Engine) -> list[str]:
+    """Añade las columnas que falten en bases ya existentes. Devuelve las creadas."""
+    if engine.dialect.name != "sqlite":  # pragma: no cover - Postgres usa alembic
+        return []
+    nuevas: list[str] = []
+    with engine.begin() as conn:
+        for tabla, columnas in _COLUMNAS_NUEVAS.items():
+            existentes = {fila[1] for fila in conn.exec_driver_sql(f"PRAGMA table_info({tabla})")}
+            if not existentes:  # la tabla no existe todavía: la crea `create_all`
+                continue
+            for columna, tipo in columnas.items():
+                if columna in existentes:
+                    continue
+                conn.exec_driver_sql(f"ALTER TABLE {tabla} ADD COLUMN {columna} {tipo}")
+                nuevas.append(f"{tabla}.{columna}")
+    return nuevas
+
+
 def create_schema(database_url: str) -> None:
-    """Crea las tablas si no existen (F0: sin alembic todavía)."""
-    Base.metadata.create_all(build_engine(database_url))
+    """Crea las tablas si no existen y pone al día las columnas nuevas (sin alembic)."""
+    engine = build_engine(database_url)
+    Base.metadata.create_all(engine)
+    migrar_esquema(engine)
 
 
 def make_session_factory(database_url: str) -> sessionmaker[Session]:

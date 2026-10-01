@@ -138,7 +138,13 @@ class Title(Base):
     slug: Mapped[str] = mapped_column(String(255))
     name: Mapped[str] = mapped_column(Text)
     name_norm: Mapped[str] = mapped_column(Text)  # minúsculas sin acentos (búsqueda)
-    letter: Mapped[str] = mapped_column(String(2))  # '#', 'A'… 'Z'
+    # Agrupación del título para la UI:
+    #   · Switch: la letra del bucket (`#`, `A`… `Z`), 1-2 caracteres.
+    #   · Retro:  el SISTEMA/plataforma del nivel 1 (`ARC N-64`, `ARC Mame2003`…),
+    #             que hace de "bucket" en esa colección (ver `app.ingest`).
+    # SQLite no impone longitud a VARCHAR, así que ampliar de 2 a 64 no necesita
+    # migración y los catálogos existentes siguen siendo válidos.
+    letter: Mapped[str] = mapped_column(String(64))
     # Agregados del título
     size_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
     file_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -153,6 +159,14 @@ class Title(Base):
     igdb_slug: Mapped[str | None] = mapped_column(String(255))
     igdb_cover: Mapped[str | None] = mapped_column(Text)
     igdb_json: Mapped[str | None] = mapped_column(Text)
+    # Identidad CANÓNICA de IGDB: `name` conserva el nombre del fichero/carpeta
+    # original (la ROM), que es lo que identifica el contenido en MEGA, y estos
+    # campos publican el título OFICIAL que IGDB da a ese juego. Se materializan
+    # (en vez de leerse del JSON) porque el catálogo ordena, busca y filtra por
+    # ellos en SQL; los rellena `app.enrich` desde la ficha guardada, SIN red.
+    igdb_name: Mapped[str | None] = mapped_column(Text)
+    igdb_name_norm: Mapped[str | None] = mapped_column(Text)  # `normalize(igdb_name)`
+    igdb_year: Mapped[int | None] = mapped_column(Integer)  # año del lanzamiento original
 
 
 class Novedad(Base):
