@@ -168,7 +168,9 @@ def test_rotacion_de_share_remapa_rutas_y_conserva_igdb(tmp_path, monkeypatch):
     )
     stats = refresh_text(engine, rotado)
 
-    assert stats["rotados"] == [["INSHARE test@example.com:BCKP1", "INSHARE otro@example.com:BCKP2"]]
+    assert stats["rotados"] == [
+        ["INSHARE test@example.com:BCKP1", "INSHARE otro@example.com:BCKP2"]
+    ]
     assert stats["removed_files"] == 0
     assert stats["removed_folders"] == 0
     assert stats["added_files"] == 1  # solo el archivo nuevo de verdad

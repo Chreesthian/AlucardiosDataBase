@@ -37,6 +37,11 @@ MEGA_ENV_POR_DEFECTO="${HOME:-/home/christian}/.config/alucard/mega.env"
 MEGA_CUENTAS_POR_DEFECTO="${ALUCARD_MEGA_CUENTAS:-${HOME:-/home/christian}/.config/alucard/mega_cuentas.txt}"
 MEGA_CUENTAS_FICHERO=""
 MEGA_LOGIN_DETALLE=""
+# Esperas acotadas a que MEGAcmd asiente la sesión (su rc y su salida llegan
+# antes que `mega-whoami`; medido en el host: ~2-7 s por login).
+MEGA_ESPERA_LOGIN="${MEGA_ESPERA_LOGIN:-90}"            # login con rc=0
+MEGA_ESPERA_LOGIN_FALLO="${MEGA_ESPERA_LOGIN_FALLO:-15}" # login con rc!=0 (margen)
+MEGA_ESPERA_LOGOUT="${MEGA_ESPERA_LOGOUT:-30}"           # cierre de la sesión previa
 
 # `log` de respaldo si el script que carga el helper no define el suyo.
 if ! declare -F log >/dev/null 2>&1; then
@@ -111,8 +116,36 @@ mega_cuentas_pool() {  # email<TAB>password por línea del fichero del pool (si 
   done <"$fichero"
 }
 
+mega_esperar_cuenta() {  # mega_esperar_cuenta <email|""|-> [segundos] → 0 si asienta
+  # MEGAcmd contesta ANTES de que la sesión esté lista: tras `mega-login` su
+  # `mega-whoami` puede seguir mostrando la cuenta anterior, y tras
+  # `mega-logout --keep-session` el login siguiente falla con «Already logged in»
+  # (rc=54). Sin esperar, un login CORRECTO se lee como fallido y el pipeline rota
+  # de más: cada login es un riesgo (las credenciales rotan cada semana).
+  #   <email>  → espera a que la sesión SEA esa cuenta
+  #   ""       → espera a que NO haya sesión (cierre)
+  #   "-"      → espera a que haya CUALQUIER sesión (def.)
+  local email="${1--}" segundos="${2:-${MEGA_ESPERA_LOGIN:-90}}" i=0 cuenta
+  while ((i < segundos)); do
+    cuenta="$(cuenta_activa_mega)"
+    if [[ "$email" == "-" ]]; then
+      [[ -n "$cuenta" ]] && return 0
+    else
+      [[ "${cuenta,,}" == "${email,,}" ]] && return 0
+    fi
+    sleep 1
+    i=$((i + 1))
+  done
+  cuenta="$(cuenta_activa_mega)"
+  if [[ "$email" == "-" ]]; then
+    [[ -n "$cuenta" ]]
+  else
+    [[ "${cuenta,,}" == "${email,,}" ]]
+  fi
+}
+
 mega_intentar_login() {  # mega_intentar_login <email> <password> → 0 si hay sesión
-  local email="$1" pass="$2" salida rc=0 tmp
+  local email="$1" pass="$2" salida rc=0 tmp espera
   MEGA_PASSWORD_INTENTO="$pass"
   # MEGAcmd mete bytes NUL en su salida (bash avisa al sustituirla y podría
   # truncar el diagnóstico): se limpia con `tr`, y el login se vuelca a un
@@ -121,7 +154,12 @@ mega_intentar_login() {  # mega_intentar_login <email> <password> → 0 si hay s
   timeout 180 mega-login "$email" "$pass" >"$tmp" 2>&1 || rc=$?
   salida="$(tr -d '\000' <"$tmp")"
   rm -f "$tmp"
-  if [[ "$(cuenta_activa_mega)" == "$email" ]]; then
+  # El rc de MEGAcmd no es fiable (devuelve 0 aunque la sesión no llegue a
+  # montarse): se espera al asentamiento. Si el rc sí dijo fallo, la espera es
+  # corta (margen por si mintió) para no alargar un failover real.
+  espera="$MEGA_ESPERA_LOGIN"
+  [[ "$rc" != "0" ]] && espera="$MEGA_ESPERA_LOGIN_FALLO"
+  if mega_esperar_cuenta "$email" "$espera"; then
     MEGA_LOGIN_DETALLE="ok"
     return 0
   fi
@@ -170,6 +208,10 @@ asegurar_sesion_mega() {  # 0 = sesión utilizable · 4 = sin sesión/con creden
   if [[ -n "$cuenta" ]]; then
     if salida="$(timeout 120 mega-logout --keep-session 2>&1)"; then
       log "sesión anterior cerrada con --keep-session (retomable si hiciera falta)"
+      # MEGAcmd rechaza un `mega-login` si todavía ve la sesión previa
+      # («Already logged in», rc=54): se espera a que el cierre asiente.
+      mega_esperar_cuenta "" "$MEGA_ESPERA_LOGOUT" ||
+        log "AVISO: MEGAcmd tarda en cerrar la sesión anterior (sigo igualmente)"
     else
       log "AVISO: no pude cerrar la sesión anterior: $(mega_sanear "$salida")"
     fi
@@ -210,6 +252,7 @@ asegurar_sesion_mega() {  # 0 = sesión utilizable · 4 = sin sesión/con creden
   if [[ -n "$previa" && -z "$actual" ]]; then
     log "AVISO: el login falló y no hay sesión; retomando la anterior"
     timeout 180 mega-login "$previa" >/dev/null 2>&1 || true
+    mega_esperar_cuenta - "$MEGA_ESPERA_LOGIN" || true
     actual="$(cuenta_activa_mega)"
   fi
   log "ERROR: sin sesión MEGAcmd utilizable para $MEGA_EMAIL ni para el pool"

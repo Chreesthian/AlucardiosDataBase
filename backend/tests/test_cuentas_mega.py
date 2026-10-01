@@ -231,3 +231,112 @@ def test_informe_y_recomendacion_cubren_ambas_bibliotecas():
     assert "dts.02" in renglones and "dts.03" in renglones  # rotación segura
     # Ningún informe debe filtrar credenciales: solo se guardan emails.
     assert "clave" not in "\n".join(informe["recomendacion"])
+
+
+# ── Asentamiento de la sesión MEGAcmd ────────────────────────────────────────
+# `mega-login` devuelve rc=0 ANTES de montar la sesión (su rc no es fiable) y
+# `mega-logout --keep-session` antes de cerrarla: sin esperar, un login CORRECTO
+# se lee como fallido y el pipeline repite logins (cada uno es un riesgo: las
+# credenciales rotan y la sesión de MEGAcmd es única). Medido en el host real:
+# ~2-7 s por login. Estas pruebas fijan ese contrato con MEGAcmd simulado.
+
+
+def _mega_simulado(estado: dict, *, asentar_tras: int = 3):
+    """MEGAcmd simulado: la cuenta del login tarda `asentar_tras` whoamis en verse."""
+    llamadas: list[tuple[str, ...]] = []
+
+    def _mega(args, _bin, _timeout):
+        llamadas.append(tuple(args))
+        if args[0] == "mega-session":
+            return 0, "Your (secret) session is: CLAVE\n"
+        if args[0] == "mega-logout":
+            estado["cuenta"] = ""
+            estado["pendiente"] = ""
+            return 0, ""
+        if args[0] == "mega-login":
+            estado["pendiente"] = args[1]
+            estado["whoamis"] = 0
+            return 0, ""  # rc=0 aunque la sesión aún no esté lista (caso real)
+        if args[0] == "mega-whoami":
+            if estado["pendiente"]:
+                estado["whoamis"] += 1
+                if estado["whoamis"] >= asentar_tras:
+                    estado["cuenta"], estado["pendiente"] = estado["pendiente"], ""
+            return 0, f"Account e-mail: {estado['cuenta']}\n"
+        return 1, ""
+
+    return _mega, llamadas
+
+
+def _logins(llamadas: list[tuple[str, ...]], email: str = "") -> int:
+    """Cuántos `mega-login` se hicieron (a `email`, si se indica)."""
+    return sum(1 for c in llamadas if c[0] == "mega-login" and (not email or c[1] == email))
+
+
+def _estado_simulado(cuenta: str = "previa@example.com") -> dict:
+    return {"cuenta": cuenta, "pendiente": "", "whoamis": 0}
+
+
+def test_un_login_correcto_no_se_repite_por_una_carrera_de_megacmd(monkeypatch, tmp_path):
+    """El login asienta tarde: se espera y NO se repite el login."""
+    estado = _estado_simulado()
+    _mega, llamadas = _mega_simulado(estado)
+    monkeypatch.setattr(explorar, "_mega", _mega)
+    monkeypatch.setattr(explorar, "ESPERA_SONDA", 0)
+
+    res = explorar.guardar_sesion(tmp_path / "bin", "nueva@example.com", "clave")
+
+    assert res["estado"] == "login"
+    assert estado["cuenta"] == "nueva@example.com"
+    assert _logins(llamadas, "nueva@example.com") == 1  # la espera evitó el 2º intento
+    assert "rotación desde previa@example.com" in res["detalle"]
+
+
+def test_si_la_sesion_ya_es_la_cuenta_no_se_reloguea(monkeypatch, tmp_path):
+    """Reutilizar la sesión vigente es lo más barato y lo más seguro."""
+    estado = _estado_simulado("nueva@example.com")
+    _mega, llamadas = _mega_simulado(estado)
+    monkeypatch.setattr(explorar, "_mega", _mega)
+
+    res = explorar.guardar_sesion(tmp_path / "bin", "nueva@example.com", "clave")
+
+    assert res["estado"] == "reutilizada"
+    assert _logins(llamadas) == 0
+    assert not [c for c in llamadas if c[0] == "mega-logout"]
+
+
+def test_un_login_que_no_asienta_se_intenta_dos_veces_y_no_cuelga(monkeypatch, tmp_path):
+    """`rc=0` con una sesión que nunca llega: dos intentos, error claro y sin esperas."""
+    estado = _estado_simulado()
+    _mega, llamadas = _mega_simulado(estado, asentar_tras=10**9)
+    monkeypatch.setattr(explorar, "_mega", _mega)
+    monkeypatch.setattr(explorar, "ESPERA_SONDA", 0)
+    monkeypatch.setattr(explorar, "T_ESPERA_LOGIN", 0)
+    monkeypatch.setattr(explorar, "T_ESPERA_LOGOUT", 0)
+
+    res = explorar.guardar_sesion(tmp_path / "bin", "nueva@example.com", "clave")
+
+    assert res["estado"] == "error"
+    # Dos intentos con la cuenta nueva (no se rinde a la primera por una carrera)…
+    assert _logins(llamadas, "nueva@example.com") == explorar.INTENTOS_LOGIN
+    # …y la sesión previa se retoma con su clave para no dejar el host sin sesión.
+    assert _logins(llamadas, "CLAVE") == 1
+    assert "login fallido" in res["detalle"]
+
+
+def test_esperar_cuenta_distingue_sesion_objetivo_cierre_y_cualquiera(monkeypatch, tmp_path):
+    """La espera acotada cubre los tres estados que necesita el pipeline."""
+    estado = _estado_simulado("activa@example.com")
+    _mega, _ = _mega_simulado(estado)
+    monkeypatch.setattr(explorar, "_mega", _mega)
+    monkeypatch.setattr(explorar, "ESPERA_SONDA", 0)
+    monkeypatch.setattr(explorar, "T_ESPERA_LOGIN", 0)
+    b = tmp_path / "bin"
+
+    assert explorar._esperar_cuenta(b, "activa@example.com") == "activa@example.com"
+    assert explorar._esperar_cuenta(b) == "activa@example.com"  # cualquiera
+    # email="" espera al CIERRE: con sesión abierta devuelve (acotado) la cuenta.
+    assert explorar._esperar_cuenta(b, "") == "activa@example.com"
+    estado["cuenta"] = ""
+    assert explorar._esperar_cuenta(b, "") == ""  # cerrada: asienta al instante
+    assert explorar._esperar_cuenta(b) == ""  # sin sesión y sin margen: no miente

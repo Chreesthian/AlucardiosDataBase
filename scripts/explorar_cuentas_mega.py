@@ -58,6 +58,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -83,6 +84,15 @@ MEGA_ENV_POR_DEFECTO = Path(
 T_LOGIN = 600
 T_CORTO = 120
 T_LISTADO = 3600
+# MEGAcmd contesta ANTES de que la sesión esté lista: `mega-login` puede devolver
+# rc=0 y `mega-whoami` seguir mostrando la cuenta anterior, y `mega-logout` puede
+# no haber cerrado la sesión cuando llega el login siguiente (rc=54 «Already logged
+# in»). Estos tiempos acotan la espera a que la sesión asiente (medido en el host:
+# ~2-7 s por login) para no leer un login correcto como fallido y rotar de más.
+T_ESPERA_LOGIN = 90
+T_ESPERA_LOGOUT = 30
+ESPERA_SONDA = 1.0
+INTENTOS_LOGIN = 2
 
 _SEP_RE = re.compile(r"[\t;,=]|\s+")
 _RE_CUOTA = re.compile(r"USED STORAGE:\s*(\d+)\s+([\d.]+)%\s+of\s+(\d+)")
@@ -206,21 +216,64 @@ def montajes(mega_bin: Path) -> list[dict[str, str]]:
     return _parsear_montajes(salida)
 
 
+def _esperar_cuenta(
+    mega_bin: Path, email: str | None = None, *, timeout: int | None = None
+) -> str:
+    """Espera ACOTADA a que asiente la sesión MEGAcmd. Devuelve la cuenta activa ('' si no hay).
+
+    MEGAcmd es asíncrono: `mega-login` devuelve rc=0 antes de montar la sesión y
+    `mega-logout` antes de cerrarla (un `mega-login` siguiente fallaría con
+    «Already logged in», rc=54). Sin esta espera un login CORRECTO se lee como
+    fallido y el pipeline repite/rota logins sin motivo — y cada login es un
+    riesgo real: las credenciales rotan y la sesión de MEGAcmd es única.
+
+    · `email="cuenta@x"` → espera a que la sesión SEA esa cuenta.
+    · `email=""`         → espera a que NO haya sesión (cierre con --keep-session).
+    · `email=None`       → espera a que haya CUALQUIER sesión (retomar una clave).
+    """
+    limite = time.monotonic() + (T_ESPERA_LOGIN if timeout is None else max(timeout, 0))
+    while True:
+        actual = cuenta_activa(mega_bin)
+        if email is None:
+            if actual:
+                return actual
+        elif actual.lower() == email.lower():  # `email=""` → sesión cerrada
+            return actual
+        if time.monotonic() >= limite:
+            return actual
+        time.sleep(ESPERA_SONDA)
+
+
 def guardar_sesion(mega_bin: Path, email: str, password: str) -> dict[str, str]:
-    """Login/rotación hacia `email`, conservando la sesión previa si el login falla."""
+    """Login/rotación hacia `email`, conservando la sesión previa si el login falla.
+
+    MEGAcmd admite UNA sesión y rechaza `mega-login` si hay otra («Already logged
+    in»), así que se cierra la previa con `--keep-session` (retomable) y se espera
+    a que la sesión asiente antes de decidir: cada login es un riesgo real (las
+    credenciales rotan cada semana) y no se debe repetir por una carrera de
+    MEGAcmd. Si aun así la cuenta no entra, se restaura la sesión previa.
+    """
     actual = cuenta_activa(mega_bin)
     if actual and actual.lower() == email.lower():
         return {"estado": "reutilizada", "detalle": "la sesión activa ya era de esta cuenta"}
     previa_sesion, previa_cuenta = sesion_activa(mega_bin), actual
-    if actual:
-        _mega(["mega-logout", "--keep-session"], mega_bin, T_CORTO)
-    rc, salida = _mega(["mega-login", email, password], mega_bin, T_LOGIN)
-    if cuenta_activa(mega_bin).lower() == email.lower():
-        return {"estado": "login", "detalle": f"rotación desde {previa_cuenta or '<ninguna>'}"}
-    motivo = _limpiar(salida).splitlines()
-    detalle = motivo[0] if motivo else f"rc={rc}"
+    detalle = ""
+    for intento in range(1, INTENTOS_LOGIN + 1):
+        if cuenta_activa(mega_bin):
+            _mega(["mega-logout", "--keep-session"], mega_bin, T_CORTO)
+            _esperar_cuenta(mega_bin, "", timeout=T_ESPERA_LOGOUT)
+        rc, salida = _mega(["mega-login", email, password], mega_bin, T_LOGIN)
+        if _esperar_cuenta(mega_bin, email):
+            aviso = "" if intento == 1 else f" (asentó al {intento}º intento)"
+            return {
+                "estado": "login",
+                "detalle": f"rotación desde {previa_cuenta or '<ninguna>'}{aviso}",
+            }
+        motivo = _limpiar(salida).splitlines()
+        detalle = motivo[0] if motivo else f"rc={rc}"
     if previa_sesion and not cuenta_activa(mega_bin):
         _mega(["mega-login", previa_sesion], mega_bin, T_LOGIN)
+        _esperar_cuenta(mega_bin)
     return {
         "estado": "error",
         "detalle": f"login fallido ({detalle}); sesión restaurada: {cuenta_activa(mega_bin) or '<ninguna>'}",
