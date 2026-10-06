@@ -334,6 +334,12 @@ def serializar(session: Session, snapshot_id: int, filas: list[Novedad]) -> list
                         "ext_json": t.ext_json,
                         "igdb_slug": t.igdb_slug,
                         "igdb_cover": t.igdb_cover,
+                        # Identidad CANÓNICA de IGDB del título vivo (misma que
+                        # publican `/api/titles` y la ficha): sin esto la tarjeta
+                        # del evento solo traía el nombre real del fichero/carpeta
+                        # y ni el nombre oficial ni el año llegaban a la sección.
+                        "igdb_name": t.igdb_name,
+                        "igdb_year": t.igdb_year,
                     }
                 ),
             }

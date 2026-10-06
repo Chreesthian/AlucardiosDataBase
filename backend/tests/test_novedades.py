@@ -7,6 +7,7 @@ import json
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.enrich import run, version
 from app.models import Novedad
 from app.novedades import listar, reconstruir, resumen, serializar, tipo_de
 from app.sync import refresh_text
@@ -114,6 +115,45 @@ def test_api_novedades_lista_hidrata_y_filtra(tmp_path):
         assert filtrado["total"] == 1
         assert filtrado["items"][0]["version"] == "U-PD 1.0.2"
         assert filtrado["items"][0]["slug"] == "a-game-one"
+
+
+def test_api_novedades_propaga_la_identidad_canonica_de_igdb(tmp_path):
+    """El NOMBRE OFICIAL (y el año) de IGDB llegan a la tarjeta del evento.
+
+    La sección solo publicaba la portada (`igdb_cover`) y el nombre real del
+    fichero/carpeta; la identidad canónica ya resuelta (`igdb_name`/`igdb_year`)
+    se quedaba fuera del payload, así que la tarjeta nunca podía enseñarla.
+    """
+    from fastapi.testclient import TestClient
+
+    app = build_app(tmp_path, SAMPLE_DUMP)
+    refresh_text(app.state.engine, _con_novedades(SAMPLE_DUMP))
+
+    def stub(nombre: str, previo: dict | None):
+        if previo and version(previo) >= 2:
+            return None  # ya al día
+        if nombre == "New Shiny Game":
+            return {
+                "ficha_v": 2,
+                "slug": "new-shiny-game--2",
+                "caratula": "https://images.igdb.com/c.jpg",
+                "nombre_oficial": "New Shiny Game: Deluxe Edition",
+                "fecha_lanzamiento": "2019-03-01",
+            }
+        return {"ficha_v": 2, "miss": True}
+
+    run(app.state.engine, procesar=stub)
+
+    with TestClient(app) as c:
+        data = c.get("/api/novedades", params={"tipo": "juego_nuevo"}).json()
+        juego = data["items"][0]
+        titulo = juego["titulo"]
+        # El nombre REAL (fichero/carpeta) sigue mandando...
+        assert titulo["name"] == "New Shiny Game"
+        # ...y la identidad OFICIAL de IGDB viaja con él.
+        assert titulo["igdb_name"] == "New Shiny Game: Deluxe Edition"
+        assert titulo["igdb_year"] == 2019
+        assert titulo["igdb_slug"] == "new-shiny-game--2"
 
 
 def test_reconstruir_periodo_desde_dos_volcados(tmp_path):

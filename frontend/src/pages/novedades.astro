@@ -39,6 +39,14 @@ const ETIQUETA_TIPO: Record<string, string> = {
   contenido_nuevo: "Contenido",
 };
 
+// Nombre OFICIAL que IGDB da al juego, solo cuando APORTA (distinto del nombre
+// real del fichero/carpeta). El título real sigue mandando; el oficial ya
+// resuelto se enseña debajo para que la sección no lo deje invisible.
+function nombreOficial(n: NovedadOut): string | null {
+  const oficial = (n.titulo?.igdb_name ?? "").trim();
+  return oficial && oficial.toLowerCase() !== n.name.toLowerCase().trim() ? oficial : null;
+}
+
 // ¿La biblioteca está congelada? (volcado ausente o más viejo que el límite)
 const avisoVolcado = estado ? !estado.dump_exists || estado.dump_obsoleto : false;
 
@@ -235,7 +243,7 @@ function fechaLegible(iso: string): string {
             <div class="mt-5 grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
               {nuevos.map((n) =>
                 n.titulo ? (
-                  <GameCard game={n.titulo} />
+                  <GameCard game={n.titulo} mostrarOficial />
                 ) : (
                   <div class="opacity-60" title={`${n.name} (ya no está en la biblioteca)`}>
                     <div class="relative aspect-2/3 w-full overflow-hidden rounded-xl bg-zinc-800">
@@ -312,6 +320,11 @@ function fechaLegible(iso: string): string {
                         </span>
                       ) : null}
                     </div>
+                    {nombreOficial(n) && (
+                      <p class="mt-0.5 truncate text-[11px] text-zinc-500" title="Nombre oficial en IGDB">
+                        {nombreOficial(n)}
+                      </p>
+                    )}
                     <p class="mt-1 text-xs text-zinc-500">
                       {n.archivos} {n.archivos === 1 ? "archivo nuevo" : "archivos nuevos"} ·{" "}
                       {formatBytes(n.bytes_nuevos)}

@@ -11,24 +11,45 @@ interface Props {
   /**
    * Colección retro: la tarjeta se titula con el NOMBRE OFICIAL de IGDB y el
    * nombre real del fichero/carpeta (la ROM) queda debajo, como identidad del
-   * contenido en MEGA. En Switch (defecto) nada cambia.
+   * contenido en MEGA. En Switch (defecto) el título sigue siendo el nombre real
+   * del fichero/carpeta.
    */
   mostrarCanonico?: boolean;
+  /**
+   * Switch (secciones que destacan el catálogo, p. ej. "Novedades"): enseña el
+   * NOMBRE OFICIAL de IGDB como SUBTÍTULO cuando difiere del nombre real, igual
+   * que la ficha del juego. Sin esto la tarjeta solo enseñaría el nombre real y
+   * el nombre oficial ya resuelto quedaría invisible en la sección.
+   */
+  mostrarOficial?: boolean;
 }
 const {
   game,
   href = `/game/${game.slug}/`,
   showLetter = true,
   mostrarCanonico = false,
+  mostrarOficial = false,
 } = Astro.props;
 
 const formats = extList(game.ext_json);
-const oficial = mostrarCanonico ? (game.igdb_name ?? "").trim() : "";
-// Título de la tarjeta: el oficial cuando lo hay, el real si no.
-const titulo = oficial || game.name;
-// Solo se repite la línea del fichero si APORTA algo (nombre distinto).
-const muestraFichero =
-  !!oficial && oficial.toLowerCase() !== game.name.toLowerCase().trim();
+const oficial = (game.igdb_name ?? "").trim();
+// Título de la tarjeta: el NOMBRE OFICIAL de IGDB manda en retro; en Switch, el
+// nombre real del fichero/carpeta (la identidad del contenido en MEGA).
+const titulo = mostrarCanonico ? oficial || game.name : game.name;
+// El nombre oficial solo merece una línea si APORTA algo (distinto del real).
+const difiere = !!oficial && oficial.toLowerCase() !== game.name.toLowerCase().trim();
+// Subtítulo: en retro baja el fichero/carpeta real (identidad en MEGA); en Switch
+// con `mostrarOficial` sube el nombre OFICIAL de IGDB.
+const subtitulo = mostrarCanonico
+  ? difiere
+    ? game.name
+    : null
+  : mostrarOficial && difiere
+    ? oficial
+    : null;
+const subtituloTitle = mostrarCanonico
+  ? `Fichero real: ${game.name}`
+  : `Nombre oficial en IGDB: ${oficial}`;
 const anio = mostrarCanonico ? game.igdb_year : null;
 // Badge superior: en Switch, la letra; en retro, la PLATAFORMA oficial
 // ("Mega Drive", "N64"…), nunca el código del volcado (`ARC S3G4-…`).
@@ -53,7 +74,7 @@ const extra =
 <a
   href={href}
   class="group block"
-  title={muestraFichero ? `${titulo} — ${game.name}` : titulo}
+  title={subtitulo ? `${titulo} — ${subtitulo}` : titulo}
 >
   <div
     class={`relative aspect-2/3 w-full overflow-hidden rounded-xl bg-linear-to-br ${grad} transition-transform duration-200 group-hover:scale-[1.02]`}
@@ -91,9 +112,9 @@ const extra =
   <p class="mt-1 px-0.5 text-[11px] text-zinc-500">
     {formatBytes(game.size_bytes)} · {game.file_count} archivos{extra && <span>{extra}</span>}
   </p>
-  {muestraFichero && (
-    <p class="mt-0.5 truncate px-0.5 text-[10px] text-zinc-600" title={`Fichero real: ${game.name}`}>
-      {game.name}
+  {subtitulo && (
+    <p class="mt-0.5 truncate px-0.5 text-[10px] text-zinc-600" title={subtituloTitle}>
+      {subtitulo}
     </p>
   )}
 </a>
