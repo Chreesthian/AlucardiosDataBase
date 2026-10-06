@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Packaged ROM releases no longer end up without an IGDB sheet:**
+  `igdb.titulo_para_igdb_rom` (used by `app.enrich --coleccion retro`) stripped
+  the dump noise but NOT the package seals of a patched release
+  (`Final Fantasy VII Remake [PS4] [PKG] + Update + DLCs [Multi-Español]
+  Parte 1`). The whole string reached the matcher, and on a short title the extra
+  characters (`final fantasy 7 remake update dlcs parte 1`) pushed the v3 gate's
+  character ratio below its threshold, so the title was stored as
+  `{"ficha_v": 2, "miss": true}`: no canonical name, no cover and no age/sheet
+  data. The cleaner now cuts from the first `" + "` followed by a package word
+  (`update`, `dlc`/`dlcs`, `patch`, `bonus`, `add-on`), keeping real `" + "`
+  titles intact (`Wii Sports + Wii Sports Resort`), so those titles match again
+  on the next `backend-retro-enrich` pass.
+- **The sector guard no longer blocks on the personal cloud:** `scripts/refrescar_volcado.py`
+  aborted the refresh when the candidate dump lost a sector that carried files,
+  but it counted **every** sector — including the account's own cloud
+  (`CLOUD_DRIVE`, `INBOX`, `RUBBISH_BIN`), which is never indexed (`parser.es_biblioteca`)
+  and changes with every weekly rotation. `validar_sectores_simples` now compares
+  **only the library** (`INSHARE`) sectors, so a rotated account whose personal cloud
+  dropped a file no longer freezes the dump (the retro dump failed on a vanished
+  `PS4UPDATE.PUP`); losing an in-share that carries files still aborts loudly.
+- **"Novedades" now carries the OFFICIAL IGDB name:** `app.novedades.serializar`
+  only hydrated the event card with the real file/folder name and the cover, so
+  the canonical identity already resolved for the title (`igdb_name`/`igdb_year`)
+  never reached `GET /api/novedades` even though the schema (`TitleSummary`)
+  declares those fields. The payload now includes them and the page shows the
+  official name (as a subtitle under the real name, like the game sheet) on both
+  the new-games cards and the new-update/DLC rows, so IGDB's official name is
+  visible across the whole catalog (list, sheet and Novedades), not just retro.
+
 ### Added
 
 - **Separate retro collection (ROMs) with its own database, API and page:** the
