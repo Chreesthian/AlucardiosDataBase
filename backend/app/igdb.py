@@ -330,14 +330,16 @@ def titulo_para_igdb_rom(nombre: str) -> str:
     Los volcados de ROMs (No-Intro/GoodTools/Redump) arrastran en el nombre ruido
     que NO es parte del título: la extensión del fichero, la región/idioma
     (`(Japan, USA)`, `(En,Fr,De,Es,It)`), la revisión (`(Rev 1)`), el estado
-    (`(Beta)`, `(Demo)`) y las marcas de dump (`[!]`). Ese ruido diluye la
-    confianza del matcher —el ratio de tokens compartidos cae por debajo de 0.5—
-    y el juego se queda sin ficha, así que se recorta AQUÍ y el resto se
-    normaliza con `titulo_para_igdb`:
+    (`(Beta)`, `(Demo)`), las marcas de dump (`[!]`) y los sellos de PAQUETE de un
+    release con parches (`+ Update`, `+ DLCs`…). Ese ruido diluye la confianza del
+    matcher —el ratio de caracteres cae por debajo de la puerta v3— y el juego se
+    queda sin ficha, así que se recorta AQUÍ y el resto se normaliza con
+    `titulo_para_igdb`:
 
         Tomb Raider (USA).7z                     → tomb raider
         Dementium II (Europe) (En,Fr,De,Es,It).zip → dementium 2
         Super Mario 64 (Japan, USA) [!].zip      → super mario 64
+        FF VII Remake [PS4] [PKG] + Update + DLCs [Multi-Español] Parte 1 → final fantasy 7 remake
 
     Los MAME usan nombres cortos (`aof.zip` → `aof`): esos no existen en IGDB y
     quedan como `miss` (la sección sigue publicando la ficha del sistema). No se
@@ -355,6 +357,21 @@ def titulo_para_igdb_rom(nombre: str) -> str:
         anterior = base
         base = re.sub(r"\s*[\(\[\{][^()\[\]{}]*[\)\]\}]\s*", " ", base)
     base = re.sub(r"\s+", " ", base).strip(" -_.")
+    # Sellos de PAQUETE de un dump (releases "PS4/PS5" con parches):
+    # "Título [PS4] [PKG] + Update + DLCs [Multi-Español] Parte 1". El sufijo
+    # "+ Update" / "+ DLCs" / "+ Patch" NO es parte del título real y, si se deja,
+    # el matcher compara la cadena ENTERA ("final fantasy 7 remake update dlcs
+    # parte 1") con el título de IGDB y la rechaza por ratio: el ruido pesa tanto
+    # más cuanto más corto es el título, así que títulos cortos y bien conocidos
+    # acababan como `miss` sin ficha. Se corta desde el primer " + " seguido de una
+    # palabra de paquete; un "+ " que SÍ es título legítimo ("Wii Sports + Wii
+    # Sports Resort") no lleva esa palabra y se conserva.
+    base = re.sub(
+        r"\s*\+[^+]*?\b(?:update|dlcs?|patch|bonus|add-?ons?)\b.*$",
+        "",
+        base,
+        flags=re.IGNORECASE,
+    ).strip(" -_.")
     if not base:
         return ""
     return titulo_para_igdb(base)

@@ -81,6 +81,23 @@ def test_limpieza_titulo_rom():
     assert titulo_para_igdb_rom("aof.zip") == "aof"
     # Un punto que NO es extensión de ROM no se recorta.
     assert titulo_para_igdb_rom("Sonic 3.5") == "sonic 3 5"
+    # Sellos de PAQUETE de un dump ("[PS4] [PKG] + Update + DLCs … Parte N"): el
+    # ruido, proporcionalmente grande en títulos cortos, hundía el ratio de la
+    # puerta v3 y el juego quedaba como `miss` sin ficha ni carátula. REGRESIÓN:
+    # Final Fantasy VII Remake.
+    assert titulo_para_igdb_rom(
+        "Final Fantasy VII Remake [PS4] [PKG] + Update + DLCs [Multi-Español] Parte 1"
+    ) == "final fantasy 7 remake"
+    assert titulo_para_igdb_rom(
+        "Little Nightmares III Deluxe Edition [PS4] [PKG] + Update [Multi-Español] Parte 1"
+    ) == "little nightmares 3 deluxe edition"
+    # Un "+ " que SÍ es parte del título real NO se recorta (solo cae cuando le
+    # sigue una palabra de paquete: update/dlc/patch/bonus/add-on).
+    assert titulo_para_igdb_rom("Wii Sports + Wii Sports Resort") == (
+        "wii sports wii sports resort"
+    )
+    assert titulo_para_igdb_rom("Camping Mama + Papa (Japan).zip") == "camping mama papa"
+    assert titulo_para_igdb_rom("After The War - Part 1.zip") == "after the war part 1"
     # Nombre 100% ruido → sin término de búsqueda (se marca miss, sin red).
     assert titulo_para_igdb_rom("(USA) (Rev 1).zip") == ""
     assert titulo_para_igdb_rom("") == ""
