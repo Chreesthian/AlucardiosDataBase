@@ -48,7 +48,7 @@ if str(BACKEND) not in sys.path:
 
 from build_megacmd_dump import build_lines, human, parse_listing  # noqa: E402
 
-from app.parser import parse_file, parse_text  # noqa: E402
+from app.parser import es_biblioteca, parse_file, parse_text  # noqa: E402
 
 MEGA_BIN_DEFAULT = "/home/christian/opt/megacmd/usr/bin"
 DUMP_DEFAULT = ROOT / "mega_cuenta_contenido_MEGAcmd.txt"
@@ -210,11 +210,14 @@ _RE_ARCHIVOS = re.compile(r"^\s*Archivos\s*:\s*(\d+)\s*$")
 
 
 def sectores_con_archivos(texto: str) -> set[str]:
-    """Etiquetas de `SECTOR:` que aportan al menos un archivo (la biblioteca real).
+    """Etiquetas de `SECTOR:` que aportan al menos un archivo.
 
     Las etiquetas las fija `app.parser` a partir del SHARE montado
     (`INSHARE <dueño>:<carpeta>`), no de la cuenta activa: por eso sirven como
-    identidad estable cuando las credenciales rotan semana a semana.
+    identidad estable cuando las credenciales rotan semana a semana. Incluye
+    también la nube personal de la cuenta (`CLOUD_DRIVE`…); quien compare
+    bibliotecas debe filtrar con `app.parser.es_biblioteca` (lo hace
+    `validar_sectores_simples`).
     """
     actual, out = None, set()
     for linea in texto.splitlines():
@@ -263,9 +266,16 @@ def validar_sectores(
 
 
 def validar_sectores_simples(viejo_texto: str, texto_nuevo: str) -> tuple[list[str], list[str]]:
-    """(perdidos, nuevos) comparando solo las etiquetas de sector con archivos."""
-    viejos = sectores_con_archivos(viejo_texto)
-    nuevos = sectores_con_archivos(texto_nuevo)
+    """(perdidos, nuevos) comparando solo los sectores de la BIBLIOTECA con archivos.
+
+    Solo entran los *in-shares* (`app.parser.es_biblioteca`): el catálogo indexa
+    únicamente la biblioteca y la nube personal de la cuenta (`CLOUD_DRIVE`,
+    `INBOX`, `RUBBISH_BIN`) cambia con cada rotación, así que su pérdida no puede
+    bloquear el refresco. Perder un in-share que hoy trae archivos sí aborta: es
+    justo lo que este guard protege.
+    """
+    viejos = {s for s in sectores_con_archivos(viejo_texto) if es_biblioteca(s)}
+    nuevos = {s for s in sectores_con_archivos(texto_nuevo) if es_biblioteca(s)}
     return sorted(viejos - nuevos), sorted(nuevos - viejos)
 
 

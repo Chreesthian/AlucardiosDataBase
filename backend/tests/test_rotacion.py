@@ -209,6 +209,37 @@ def test_sectores_con_archivos_ignora_los_vacios():
     texto = CABECERA.format(cuenta="a@b.c") + SECTOR_NUBE_VACIA + SECTOR_SHARE
     assert refresco.sectores_con_archivos(texto) == {SHARE}
 
+def test_perder_la_nube_personal_no_bloquea_el_refresco(tmp_path, monkeypatch):
+    """La nube personal no es biblioteca: su pérdida NO aborta el refresco.
+
+    La cuenta activa (y con ella su nube propia) cambia en cada rotación; el
+    catálogo solo indexa los in-shares (`parser.es_biblioteca`), así que el guard
+    de sectores no puede bloquearse porque `CLOUD_DRIVE` pierda archivos.
+    """
+    nube_llena = (
+        "SECTOR: CLOUD_DRIVE\n"
+        "Archivos  : 1\n"
+        "Carpetas  : 1\n"
+        "Tamano    : 3221225472 bytes\n"
+        "\n"
+        "[ROOT] //\n"
+        "`-- [FILE] PS4UPDATE.PUP  (3221225472 bytes)\n"
+    )
+    out = tmp_path / "volcado.txt"
+    vigente = (
+        CABECERA.format(cuenta="semana.pasada@example.com") + nube_llena + SECTOR_SHARE
+    )
+    out.write_text(vigente, encoding="utf-8")
+    # Misma biblioteca; la nube personal de la cuenta nueva viene vacía.
+    candidato = CABECERA.format(cuenta="semana.nueva@example.com") + SECTOR_NUBE_VACIA + SECTOR_SHARE
+
+    assert refresco.validar_sectores_simples(vigente, candidato) == ([], [])
+
+    _main_stub(monkeypatch, candidato)
+    monkeypatch.setattr(sys, "argv", ["refrescar_volcado.py", "--out", str(out), "--no-backup"])
+    assert refresco.main() == 0  # no se bloquea: la biblioteca sigue intacta
+    assert out.read_text(encoding="utf-8") == candidato
+
 
 def test_validar_sectores_detecta_credenciales_sin_acceso(tmp_path):
     """Si la cuenta nueva no monta la biblioteca, se detecta la pérdida."""
