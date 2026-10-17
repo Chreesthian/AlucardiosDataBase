@@ -42,7 +42,7 @@ jobs:
           # `frontend/package.json` no declara `packageManager`, así que hay que
           # fijar la versión aquí (misma mayor que el Dockerfile: pnpm@11).
           version: 11
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
