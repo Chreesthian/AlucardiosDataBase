@@ -6,7 +6,7 @@
 
 Self-hosted game catalog web application for a MEGA-hosted library. The
 backend parses a MEGAcmd dump, stores the tree in SQLite, enriches every title
-with full IGDB metadata and serves a modern Astro SSR frontend styled after the
+with full IGDB metadata and serves a modern React (React Router 7, SSR) frontend styled after the
 Alucardio brand, installable as a PWA.
 
 **Read this in [Español](README.es-ES.md).**
@@ -44,7 +44,7 @@ MEGA library ──mega-ls dump──> backend ingestion ──> SQLite (WAL)
                                                          │
         IGDB metadata <── enrich workers ──> catalog & export JSON
                                                          │
-                                           FastAPI (REST/SSE) <── Astro SSR + PWA
+                                           FastAPI (REST/SSE) <── React SSR + PWA
 ```
 
 The backend exposes a REST API and structured JSON exports
@@ -55,7 +55,7 @@ only. Every service runs as a non-root container with `restart: unless-stopped`.
 
 ```text
 backend/    FastAPI + dump parser, ingestion, sync, enrichment, daemons (uv)
-frontend/   Astro SSR + Tailwind v4 + TypeScript + PWA (pnpm)
+frontend/   React Router 7 (React 19) SSR + TypeScript + PWA (pnpm)
 e2e/        Playwright audit suite (API and UI)
 scripts/    Development helpers and diagnostics
 docs/       Roadmap (PLAN.md) and research notes
@@ -100,7 +100,7 @@ make up                  # or: docker compose up -d --build
 | Service             | Purpose                                          | Port  |
 | ------------------- | ------------------------------------------------ | ----- |
 | `backend`           | FastAPI REST API + JSON exports (docs at `/docs`) | 7331  |
-| `frontend`          | Astro SSR web app + PWA                          | 7330  |
+| `frontend`          | React Router 7 SSR web app + PWA                 | 7330  |
 | `backend-enrich`    | IGDB enrichment worker                           | —     |
 | `backend-sync`      | Incremental dump watcher (adds/removes by diff)  | —     |
 | `backend-versiones` | Nintendo version audit daemon                    | —     |
@@ -224,7 +224,8 @@ it can never contaminate the Switch catalog:
   `backend-retro-enrich` (its own DB, `--coleccion retro`) fills covers, the
   canonical IGDB name and the full sheet, and `/retro/game/{slug}` renders them
   with the **same shared component** as the Switch game page
-  (`components/FichaIGDB.astro`). `GET /api/retro/status` publishes the progress
+  (`app/routes/game.tsx` · `DetailView`, reused by `retro-game.tsx`). `GET
+  /api/retro/status` publishes the progress
   (`caratulas`, `enriquecidos`, `pendientes_enrich`, `sin_match`). The sweep is
   parallelised (`--concurrencia`, default 4; the connector throttle paces the
   starts to ~3.3 req/s, under IGDB's 4 req/s limit) and every pass logs its real

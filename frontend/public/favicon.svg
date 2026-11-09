@@ -1,4 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="8" fill="#2563eb"/>
-  <text x="16" y="22.5" font-family="system-ui, -apple-system, sans-serif" font-size="17" font-weight="800" fill="#fff" text-anchor="middle">A</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Alucardios DataBase">
+<rect width="512" height="512" rx="96" fill="#111314"/>
+<g stroke="#f8ed43" stroke-linecap="butt">
+  <path d="M150 430 256 76" stroke-width="54"/>
+  <path d="M362 430 256 76" stroke-width="54"/>
+  <path d="M198 306h116" stroke-width="46"/>
+</g>
+<circle cx="404" cy="108" r="26" fill="#ff4060"/>
+<g stroke="#f8ed43" stroke-width="5" opacity=".55">
+  <path d="M96 448h320M96 466h320M96 484h320"/>
+</g>
 </svg>

@@ -7,8 +7,8 @@
 Aplicación web autohospedada de catálogo de videojuegos para una biblioteca
 alojada en MEGA. El backend interpreta un volcado de MEGAcmd, almacena el
 árbol en SQLite, enriquece cada título con metadatos completos de IGDB y sirve
-un frontend moderno en Astro SSR con la estética de la marca Alucardio,
-instalable como PWA.
+un frontend moderno en React (React Router 7, SSR) con la estética de la marca
+Alucardio, instalable como PWA.
 
 **Lee esta página en [English](README.md).**
 
@@ -46,7 +46,7 @@ Biblioteca MEGA ──volcado mega-ls──> ingesta backend ──> SQLite (WAL
                                                              │
       Metadatos IGDB <── workers de enriquecido ──> catálogo y JSON export
                                                              │
-                                               FastAPI (REST/SSE) <── Astro SSR + PWA
+                                               FastAPI (REST/SSE) <── React SSR + PWA
 ```
 
 El backend expone una API REST y exportaciones JSON estructuradas
@@ -58,7 +58,7 @@ API. Todos los servicios corren como contenedores no-root con
 
 ```text
 backend/    FastAPI + parser del volcado, ingesta, sync, enriquecido, daemons (uv)
-frontend/   Astro SSR + Tailwind v4 + TypeScript + PWA (pnpm)
+frontend/   React Router 7 (React 19) SSR + TypeScript + PWA (pnpm)
 e2e/        Suite de auditoría Playwright (API y UI)
 scripts/    Utilidades de desarrollo y diagnóstico
 docs/       Hoja de ruta (PLAN.md) y notas de investigación
@@ -103,7 +103,7 @@ make up                  # o: docker compose up -d --build
 | Servicio             | Propósito                                      | Puerto |
 | -------------------- | ---------------------------------------------- | ------ |
 | `backend`            | API REST FastAPI + exportaciones JSON (docs en `/docs`) | 7331 |
-| `frontend`           | Web Astro SSR + PWA                            | 7330   |
+| `frontend`           | Web React Router 7 SSR + PWA                   | 7330   |
 | `backend-enrich`     | Worker de enriquecido IGDB                      | —      |
 | `backend-sync`       | Vigía del volcado (altas/bajas por diff)       | —      |
 | `backend-versiones`  | Demonio de auditoría de versiones Nintendo     | —      |
@@ -214,7 +214,8 @@ catálogo de Switch:
   (`igdb.titulo_para_igdb_rom`) antes de preguntar a IGDB. El worker supervisado
   `backend-retro-enrich` (su BD, `--coleccion retro`) rellena carátula, nombre
   canónico y ficha completa, y `/retro/game/{slug}` los pinta con el MISMO
-  componente compartido que la ficha de Switch (`components/FichaIGDB.astro`).
+  componente compartido que la ficha de Switch (`app/routes/game.tsx` ·
+  `DetailView`, reutilizado por `retro-game.tsx`).
   `GET /api/retro/status` publica el progreso (`caratulas`, `enriquecidos`,
   `pendientes_enrich`, `sin_match`). El barrido va en paralelo (`--concurrencia`,
   def. 4; el throttle del conector pacea los arranques a ~3.3 req/s, por debajo

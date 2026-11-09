@@ -119,3 +119,18 @@ test("navegación directa a detalle inexistente muestra estado controlado", asyn
   expect(response?.status()).toBe(404);
   await expect(page.getByText("No se pudo cargar el juego")).toBeVisible();
 });
+
+test("toggle lista/cuadrícula coherente en Biblioteca, Retro y Novedades", async ({ page }) => {
+  for (const path of ["/", "/retro", "/novedades"]) {
+    await page.goto(path);
+    // La lista es la vista POR DEFECTO en las tres secciones.
+    await expect(page.locator(".work-list").first()).toBeVisible();
+
+    await page.getByRole("link", { name: "Cuadrícula", exact: true }).click();
+    await expect(page).toHaveURL(/vista=cuadricula/);
+    await expect(page.locator(".cover-grid").first()).toBeVisible();
+
+    await page.getByRole("link", { name: "Lista", exact: true }).click();
+    await expect(page.locator(".work-list").first()).toBeVisible();
+  }
+});

@@ -7,8 +7,8 @@ similar) working in this repository.
 
 AlucardiosDataBase is a self-hosted web application that turns a MEGA Switch
 library dump into a browsable catalog enriched with IGDB metadata. It is
-backend-first (FastAPI + SQLAlchemy + SQLite) with an Astro SSR frontend and a
-Docker Compose deployment of supervised workers.
+backend-first (FastAPI + SQLAlchemy + SQLite) with a React Router 7 (React 19)
+SSR frontend and a Docker Compose deployment of supervised workers.
 
 ## Layout
 
@@ -33,7 +33,8 @@ Docker Compose deployment of supervised workers.
   - `indexar_descargas.py`, `megacmd.py`: MEGA download index.
   - `routers/`: FastAPI routes (`retro.py` serves the separate ROMs catalog).
   - `tests/`: pytest suite.
-- `frontend/src`: Astro pages, components, styles.
+- `frontend/app`: React Router routes, components, styles (custom CSS design
+  system cloned from charbeltannous.com, adapted to the catalog).
 - `frontend/public`: static assets and PWA files.
 - `docker-compose.yaml`: API, frontend, and workers.
 - `e2e/`: Playwright audit against a live deployment.

@@ -1,15 +1,15 @@
 /* Alucard — Service Worker (PWA instalable).
  * Estrategia segura para un SSR + API:
  *  - Navegaciones y /api/* → siempre a red (contenido fresco).
- *  - Estáticos hasheados (/icons, /favicon, /_astro/*) → caché primero.
+ *  - Estáticos hasheados (/icons, /brand, /assets/*) → caché primero.
  * Al desplegar una versión nueva se cambia el nombre de caché (bump abajo).
  */
-const CACHE = "alucard-v2";
+const CACHE = "alucard-v4";
 const PRECACHE = [
   "/manifest.webmanifest",
   "/favicon.svg",
-  "/brand/logo.png",
-  "/brand/emblem.png",
+  "/brand/emblem.svg",
+  "/icons/apple-touch-icon.png",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
   "/icons/icon-maskable-512.png",
@@ -50,7 +50,7 @@ self.addEventListener("fetch", (event) => {
         })
         .catch(async () => {
           const cache = await caches.open(CACHE);
-          const fallback = await cache.match(url.pathname === "/" ? "/" : req);
+          const fallback = await cache.match("/");
           return fallback || Response.error();
         })
     );

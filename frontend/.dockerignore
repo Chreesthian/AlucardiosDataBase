@@ -1,7 +1,9 @@
 # node / build
 node_modules/
 dist/
+build/
 .astro/
+.react-router/
 *.log
 
 # secretos locales

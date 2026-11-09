@@ -10,6 +10,10 @@ node_modules/
 dist/
 .astro/
 
+# React Router (framework mode): tipos y build generados
+frontend/.react-router/
+frontend/build/
+
 # Datos runtime (BD, dumps generados, logs) — nunca subir
 data/*.db
 data/*.db-*
