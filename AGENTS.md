@@ -70,7 +70,10 @@ SSR frontend and a Docker Compose deployment of supervised workers.
   log. It must reuse `verificar_rotacion.py`, `refrescar_volcado.py` and
   `app.sync.refresh`; do not duplicate the MEGA/login/diff pipeline. It only
   runs where MEGAcmd exists: a container without MEGAcmd must report the update
-  as unavailable, never pretend to update.
+  as unavailable, never pretend to update. The Docker bridge (`make update-agent`)
+  may proxy to a host agent, but the container must never store MEGA passwords:
+  the agent writes the private files on the host and calls the API to apply the
+  refreshed dump.
 - The rotation failover is guided by the LIBRARY, never by the login: an account
   can log in and still mount another share. Keep `verificar_rotacion.elegir_del_pool`
   as the only path that rotates accounts in the pre-flight, keep restoring the

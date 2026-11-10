@@ -32,6 +32,11 @@ services:
       # `data/` del repo y la API lo publica en `GET /api/sync/cuentas` para que
       # la UI avise cuando las credenciales de la semana montan OTRA biblioteca.
       ALUCARD_ESTADO_CUENTAS_PATH: /estado/estado_cuentas.json
+      # Puente host: el contenedor no usa MEGAcmd; delega en el agente que corre
+      # en el equipo (make update-agent) por un socket Unix compartido en data/.
+      # El token es del agente, no de MEGA.
+      ALUCARD_UPDATE_AGENT_SOCKET_PATH: /estado/update_agent.sock
+      ALUCARD_UPDATE_AGENT_TOKEN_PATH: /estado/update_agent.token
     volumes:
       - alucard-data:/data
       - type: bind

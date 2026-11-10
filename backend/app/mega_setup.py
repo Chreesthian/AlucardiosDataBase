@@ -21,6 +21,8 @@ import os
 import re
 import subprocess
 import threading
+import urllib.error
+import urllib.request
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
@@ -28,6 +30,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
+import httpx
 from sqlalchemy.engine import Engine
 
 from .config import Settings
@@ -321,9 +324,16 @@ def _leer_json(path: Path) -> dict:
 class HostMegaRunner:
     """Orquesta los scripts host existentes y aplica el diff en esta BD."""
 
-    def __init__(self, cfg: Settings, engine: Engine) -> None:
+    def __init__(
+        self,
+        cfg: Settings,
+        engine: Engine | None,
+        *,
+        sync_url: str | None = None,
+    ) -> None:
         self.cfg = cfg
         self.engine = engine
+        self.sync_url = sync_url
 
     def _mega_bin_ok(self) -> bool:
         binario = self.cfg.resolved_mega_bin
@@ -494,27 +504,64 @@ class HostMegaRunner:
             )
 
         progress("sincronizando", "Aplicando los cambios a la base de datos…")
-        try:
-            parsed = parse_file(self.cfg.resolved_dump)
-            resumen = refresh(
-                self.engine,
-                parsed,
-                kind="dump",
-                source_path=str(self.cfg.resolved_dump),
-                min_fraccion=self.cfg.sync_min_fraccion,
-                min_titulos_fraccion=self.cfg.sync_min_titulos_fraccion,
-            )
-        except Exception as exc:  # mensaje para la UI, sin secretos
+        if self.engine is not None:
+            try:
+                parsed = parse_file(self.cfg.resolved_dump)
+                resumen = refresh(
+                    self.engine,
+                    parsed,
+                    kind="dump",
+                    source_path=str(self.cfg.resolved_dump),
+                    min_fraccion=self.cfg.sync_min_fraccion,
+                    min_titulos_fraccion=self.cfg.sync_min_titulos_fraccion,
+                )
+            except Exception as exc:  # mensaje para la UI, sin secretos
+                raise MegaUpdateFailed(
+                    "El volcado se actualizó, pero la base de datos no pudo aplicar "
+                    f"los cambios: {exc}"
+                ) from exc
+        elif self.sync_url:
+            resumen = self._sync_remoto()
+        else:
             raise MegaUpdateFailed(
-                "El volcado se actualizó, pero la base de datos no pudo aplicar los "
-                f"cambios: {exc}"
-            ) from exc
+                "El volcado se actualizó, pero no hay una API a la que aplicarlo."
+            )
 
         return {
             "cuenta": informe.get("cuenta") or informe.get("elegida"),
             "resumen": resumen,
             "biblioteca": informe.get("biblioteca"),
         }
+
+    def _sync_remoto(self) -> dict:
+        """Pide a la API que aplique el volcado ya refrescado en el host."""
+        datos = json.dumps({}).encode()
+        peticion = urllib.request.Request(  # noqa: S310 - URL de configuración local
+            str(self.sync_url),
+            data=datos,
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(  # noqa: S310 - URL de configuración local
+                peticion, timeout=self.cfg.mega_update_timeout_s
+            ) as respuesta:
+                payload = json.load(respuesta)
+        except urllib.error.HTTPError as exc:
+            raise MegaUpdateFailed(
+                "El volcado se actualizó, pero la API del catálogo rechazó los "
+                f"cambios (HTTP {exc.code})."
+            ) from exc
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            raise MegaUpdateFailed(
+                "El volcado se actualizó, pero no se pudo avisar a la API del "
+                "catálogo para aplicar los cambios."
+            ) from exc
+        resumen = payload.get("resumen") if isinstance(payload, dict) else None
+        return resumen if isinstance(resumen, dict) else {}
 
 
 class MegaSetupService:
@@ -523,7 +570,7 @@ class MegaSetupService:
     def __init__(
         self,
         cfg: Settings,
-        engine: Engine,
+        engine: Engine | None,
         runner: MegaRunner | None = None,
     ) -> None:
         self.cfg = cfg
@@ -575,3 +622,123 @@ class MegaSetupService:
             raise MegaSetupInvalid("Introduce las tres cuentas MEGA.")
         self.manager.start()
         return self.status()
+
+
+class RemoteMegaSetupService:
+    """Proxy de la UI Docker hacia el agente que sí ve MEGAcmd en el host.
+
+    No guarda credenciales en el contenedor: las envía al agente, que escribe el
+    pool privado del host. El token del agente viaja en una cabecera y se lee de
+    un fichero compartido dentro de `data/` (no es una contraseña MEGA).
+    """
+
+    def __init__(self, cfg: Settings) -> None:
+        self.cfg = cfg
+
+    def _token(self) -> str:
+        path = self.cfg.resolved_update_agent_token
+        try:
+            token = path.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise MegaSetupUnavailable(
+                "El servicio de actualización del equipo no está configurado."
+            ) from exc
+        if not token:
+            raise MegaSetupUnavailable(
+                "El servicio de actualización del equipo no tiene token."
+            )
+        return token
+
+    @staticmethod
+    def _detalle(response: httpx.Response) -> str:
+        try:
+            datos = response.json()
+        except ValueError:
+            return ""
+        detalle = datos.get("detail") if isinstance(datos, dict) else None
+        return str(detalle).strip()[:300] if detalle else ""
+
+    def _leer(self, response: httpx.Response) -> dict:
+        if response.status_code >= 400:
+            detalle = self._detalle(response)
+            if response.status_code == 400:
+                raise MegaSetupInvalid(detalle or "Revisa las cuentas MEGA.")
+            if response.status_code == 409:
+                raise MegaUpdateBusy(
+                    detalle or "Ya hay una actualización en curso."
+                )
+            if response.status_code == 401:
+                raise MegaSetupUnavailable(
+                    "El servicio de actualización del equipo rechazó la conexión."
+                )
+            raise MegaSetupUnavailable(
+                detalle or "El servicio de actualización del equipo devolvió un error."
+            )
+        try:
+            cuerpo = response.json()
+        except ValueError:
+            return {}
+        return cuerpo if isinstance(cuerpo, dict) else {}
+
+    def _request(self, method: str, path: str, payload: dict | None = None) -> dict:
+        token = self._token()
+        headers = {
+            "Accept": "application/json",
+            "X-Alucard-Update-Token": token,
+        }
+        try:
+            if self.cfg.update_agent_socket_path is not None:
+                socket_path = self.cfg.resolved_update_agent_socket
+                if not socket_path.exists():
+                    raise MegaSetupUnavailable(
+                        "El servicio de actualización del equipo no está en marcha. "
+                        "Arráncalo en el host con `make update-agent`."
+                    )
+                transporte = httpx.HTTPTransport(uds=str(socket_path))
+                with httpx.Client(
+                    transport=transporte,
+                    base_url="http://agente",
+                    timeout=self.cfg.update_agent_timeout_s,
+                ) as cliente:
+                    respuesta = cliente.request(
+                        method, path, json=payload, headers=headers
+                    )
+            else:
+                base = (self.cfg.update_agent_url or "").rstrip("/")
+                if not base:
+                    raise MegaSetupUnavailable("Falta el puente de actualización.")
+                with httpx.Client(
+                    base_url=base,
+                    timeout=self.cfg.update_agent_timeout_s,
+                ) as cliente:
+                    respuesta = cliente.request(
+                        method, path, json=payload, headers=headers
+                    )
+        except MegaSetupError:
+            raise
+        except (httpx.HTTPError, OSError) as exc:
+            raise MegaSetupUnavailable(
+                "El servicio de actualización del equipo no está en marcha. "
+                "Arráncalo en el host con `make update-agent`."
+            ) from exc
+        return self._leer(respuesta)
+
+    def status(self) -> dict:
+        try:
+            return self._request("GET", "/api/setup/mega")
+        except MegaSetupError as exc:
+            return {
+                "disponible": False,
+                "motivo": str(exc),
+                "cuentas": [],
+                "actualizacion": MegaUpdateManager._estado_inicial(),
+            }
+
+    def start(self, cuentas: list[MegaCuenta] | None = None) -> dict:
+        payload: dict = {}
+        if cuentas is not None:
+            payload["cuentas"] = [
+                {"email": cuenta.email, "password": cuenta.password}
+                for cuenta in cuentas
+            ]
+        return self._request("POST", "/api/setup/mega/update", payload)

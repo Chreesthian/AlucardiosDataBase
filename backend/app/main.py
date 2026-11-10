@@ -19,7 +19,7 @@ from . import __version__
 from .config import Settings
 from .config import settings as default_settings
 from .db import build_engine, create_schema
-from .mega_setup import MegaSetupService
+from .mega_setup import MegaSetupService, RemoteMegaSetupService
 from .routers import catalog, download, enrich, health, library, novedades, retro, setup, sync
 
 
@@ -57,8 +57,13 @@ def create_app(settings_: Settings | None = None) -> FastAPI:
     app.state.session_factory_retro = session_factory_retro
     app.state.settings = cfg
     # La actualización usa el mismo motor/BD; el runner comprueba si MEGAcmd
-    # existe en ESTE equipo antes de aceptar credenciales.
-    app.state.mega_setup = MegaSetupService(cfg, engine)
+    # existe en ESTE equipo antes de aceptar credenciales. En Docker se delega
+    # al agente host (ALUCARD_UPDATE_AGENT_URL) porque el contenedor no puede
+    # acceder a la sesión MEGAcmd del equipo.
+    if cfg.update_agent_url or cfg.update_agent_socket_path:
+        app.state.mega_setup = RemoteMegaSetupService(cfg)
+    else:
+        app.state.mega_setup = MegaSetupService(cfg, engine)
 
     app.add_middleware(
         CORSMiddleware,

@@ -10,7 +10,7 @@ BACKEND_PORT := $(if $(strip $(BACKEND_PORT)),$(strip $(BACKEND_PORT)),7331)
 export BACKEND_PORT
 
 .PHONY: help build up down ps logs restart dev test lint clean volcado novedades pre-vuelo rotacion \
-	enrich enrich-retro enrich-campos enrich-retro-campos volcado-retro volcado-retro-cron \
+	update-agent enrich enrich-retro enrich-campos enrich-retro-campos volcado-retro volcado-retro-cron \
 	volcado-retro-cron-off volcado-retro-estado \
 	retro-credenciales retro-status retro-sync
 
@@ -66,6 +66,9 @@ enrich-retro-campos: ## Pone al día nombre oficial/año y portadas SIN red (col
 
 volcado: ## Refresca el volcado canónico desde MEGA (requiere sesión MEGAcmd)
 	cd backend && uv run python ../scripts/refrescar_volcado.py
+
+update-agent: ## Puente host para actualizar MEGA desde la UI Docker (foreground)
+	cd backend && uv run python ../scripts/agente_actualizacion.py --sync-url "http://127.0.0.1:$(BACKEND_PORT)/api/sync/dump"
 
 volcado-auto: ## Refresca el volcado AHORA y aplica el escaneo (falla ruidoso)
 	./scripts/autovolcado.sh

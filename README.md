@@ -212,9 +212,15 @@ accounts of the rotation. The page stores them outside the repository
 always: pre-flight → dump → incremental sync. The preferred account is tried
 first; the other two are only tried when it cannot see the library. If the pre-flight
 or the dump guard fails, the database is left untouched. No password is stored
-in SQLite, returned by the API or written to a log. A container without MEGAcmd
-shows the action as unavailable; the desktop package runs it on the user's
-machine.
+in SQLite, returned by the API or written to a log.
+
+In Docker the API cannot use MEGAcmd. Start the host bridge with
+`make update-agent` and the same `/actualizar` form proxies the request to the
+host agent; the agent writes the private files on the host and asks the Docker
+API to apply the refreshed dump. The agent listens on a Unix socket
+(`data/update_agent.sock`), requires the token in `data/update_agent.token`, and
+never receives MEGA credentials in the container. The desktop package can use
+the local mode directly.
 
 ## Retro collection (separate catalog)
 

@@ -96,6 +96,15 @@ class Settings(BaseSettings):
     actualizacion_estado_path: Path | None = None
     actualizacion_log_path: Path | None = None
 
+    # ── Puente host para la UI Docker ─────────────────────
+    # El contenedor no puede usar MEGAcmd; si esta URL está definida, la API le
+    # delega la actualización a un agente que corre en el host. El token protege
+    # el puerto del agente y se comparte por un fichero dentro de `data/`.
+    update_agent_url: str | None = None
+    update_agent_token_path: Path | None = None
+    update_agent_socket_path: Path | None = None
+    update_agent_timeout_s: float = 15.0
+
     # ── Frescura del volcado (pipeline de actualización) ────
     # Edad máxima (horas) que puede tener el volcado canónico antes de que el
     # vigía `app.sync --watch` lo considere OBSOLETO y falle a propósito: si la
@@ -268,6 +277,22 @@ class Settings(BaseSettings):
         return self._ruta_config(
             self.actualizacion_log_path,
             self.resolved_db_path.parent / "actualizacion.log",
+        )
+
+    @property
+    def resolved_update_agent_token(self) -> Path:
+        """Token compartido con el agente host (no es una credencial MEGA)."""
+        return self._ruta_config(
+            self.update_agent_token_path,
+            self.resolved_db_path.parent / "update_agent.token",
+        )
+
+    @property
+    def resolved_update_agent_socket(self) -> Path:
+        """Socket Unix del agente; evita abrir un puerto TCP en el host."""
+        return self._ruta_config(
+            self.update_agent_socket_path,
+            self.resolved_db_path.parent / "update_agent.sock",
         )
 
     @property

@@ -204,8 +204,15 @@ siempre: pre-vuelo → volcado → sincronización incremental. La cuenta marcad
 preferida se intenta primero; las otras dos se prueban solo si no ve la
 biblioteca. Si el pre-vuelo o el guard del volcado fallan, no se toca la base de
 datos. Ninguna contraseña se guarda en SQLite, se devuelve por la API ni se
-escribe en el log. Un contenedor sin MEGAcmd muestra la acción como no
-disponible; el paquete de escritorio la ejecuta en el equipo del usuario.
+escribe en el log.
+
+En Docker la API no puede usar MEGAcmd. Arranca el puente host con
+`make update-agent` y el mismo formulario `/actualizar` delega en el agente del
+equipo; el agente escribe los ficheros privados en el host y pide a la API de
+Docker que aplique el volcado. El agente escucha en un socket Unix
+(`data/update_agent.sock`), exige el token de `data/update_agent.token` y nunca
+recibe las contraseñas MEGA dentro del contenedor. El paquete de escritorio
+puede usar el modo local directamente.
 
 ## Colección retro (catálogo aparte)
 

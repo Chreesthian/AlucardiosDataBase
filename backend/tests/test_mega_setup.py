@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import json
 import stat
 import sys
 import textwrap
 import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 from fastapi.testclient import TestClient
@@ -22,6 +25,7 @@ from app.mega_setup import (
     MegaUpdateBusy,
     MegaUpdateFailed,
     MegaUpdateManager,
+    RemoteMegaSetupService,
     normalizar_cuentas,
 )
 
@@ -371,3 +375,107 @@ def test_login_preferida_usa_la_primera_cuenta_del_pool(tmp_path):
     assert resultado is not None
     assert resultado["email"] == "uno@example.com"
     assert resultado["estado"] == "login"
+
+
+class _AgenteFalso(BaseHTTPRequestHandler):
+    """Agente HTTP mínimo para probar el proxy sin MEGA."""
+
+    llamadas: ClassVar[list[dict]] = []
+
+    def _responder(self, status: int, payload: dict) -> None:
+        data = json.dumps(payload).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_GET(self) -> None:
+        type(self).llamadas.append(
+            {"metodo": "GET", "token": self.headers.get("X-Alucard-Update-Token")}
+        )
+        self._responder(
+            200,
+            {
+                "disponible": True,
+                "motivo": None,
+                "cuentas": [
+                    {
+                        "email": "uno@example.com",
+                        "password_guardada": True,
+                        "preferida": True,
+                    }
+                ],
+                "actualizacion": MegaUpdateManager._estado_inicial(),
+            },
+        )
+
+    def do_POST(self) -> None:
+        length = int(self.headers.get("Content-Length", "0"))
+        body = json.loads(self.rfile.read(length) or b"{}")
+        type(self).llamadas.append(
+            {
+                "metodo": "POST",
+                "token": self.headers.get("X-Alucard-Update-Token"),
+                "body": body,
+            }
+        )
+        self._responder(
+            202,
+            {
+                "disponible": True,
+                "motivo": None,
+                "cuentas": [],
+                "actualizacion": {
+                    **MegaUpdateManager._estado_inicial(),
+                    "estado": "en_curso",
+                    "fase": "guardando",
+                    "mensaje": "Guardando…",
+                },
+            },
+        )
+
+    def log_message(self, *args) -> None:
+        pass
+
+
+def test_remote_service_delega_en_el_agente_sin_guardar_en_local(tmp_path):
+    token_value = "t" * 32
+    token = tmp_path / "agente.token"
+    token.write_text(token_value, encoding="utf-8")
+    _AgenteFalso.llamadas = []
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _AgenteFalso)
+    hilo = threading.Thread(target=server.serve_forever, daemon=True)
+    hilo.start()
+    cfg = Settings(
+        update_agent_url=f"http://127.0.0.1:{server.server_address[1]}",
+        update_agent_token_path=token,
+        mega_cuentas_path=tmp_path / "no-debe-crearse.txt",
+    )
+    try:
+        service = RemoteMegaSetupService(cfg)
+        estado = service.status()
+        assert estado["disponible"] is True
+        assert _AgenteFalso.llamadas[0]["token"] == token_value
+
+        respuesta = service.start(_cuentas())
+        assert respuesta["actualizacion"]["estado"] == "en_curso"
+        assert _AgenteFalso.llamadas[-1]["body"]["cuentas"][0]["email"] == "uno@example.com"
+        assert not cfg.resolved_mega_cuentas.exists()
+    finally:
+        server.shutdown()
+        server.server_close()
+        hilo.join(timeout=2)
+
+
+def test_remote_service_sin_agente_devuelve_aviso(tmp_path):
+    token = tmp_path / "agente.token"
+    token.write_text("t" * 32, encoding="utf-8")
+    cfg = Settings(
+        update_agent_url="http://127.0.0.1:9",
+        update_agent_token_path=token,
+    )
+    estado = RemoteMegaSetupService(cfg).status()
+    assert estado["disponible"] is False
+    assert "make update-agent" in estado["motivo"]
+    assert "secreto" not in json.dumps(estado)
