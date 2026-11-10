@@ -195,6 +195,18 @@ make credenciales     # guarda MEGA_EMAIL/MEGA_PASSWORD de la semana (chmod 600)
   Vuelve a indexar los enlaces contra el share nuevo con
   `./scripts/enlazar_descargas.sh` (host, reanudable).
 
+### Actualización desde la interfaz
+
+En una instalación de escritorio/host con MEGAcmd, abre `/actualizar` e
+introduce las tres cuentas de la rotación. La pantalla las guarda fuera del repo
+(`chmod 600`), comprueba cuál ve la biblioteca y ejecuta el mismo pipeline de
+siempre: pre-vuelo → volcado → sincronización incremental. La cuenta marcada como
+preferida se intenta primero; las otras dos se prueban solo si no ve la
+biblioteca. Si el pre-vuelo o el guard del volcado fallan, no se toca la base de
+datos. Ninguna contraseña se guarda en SQLite, se devuelve por la API ni se
+escribe en el log. Un contenedor sin MEGAcmd muestra la acción como no
+disponible; el paquete de escritorio la ejecuta en el equipo del usuario.
+
 ## Colección retro (catálogo aparte)
 
 El pool de cuentas de MEGA también trae una **segunda biblioteca independiente**:

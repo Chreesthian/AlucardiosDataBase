@@ -10,5 +10,6 @@ export default [
   route("novedades", "routes/novedades.tsx"),
   route("retro", "routes/retro.tsx"),
   route("retro/game/:slug", "routes/retro-game.tsx"),
+  route("actualizar", "routes/update.tsx"),
   route("*", "routes/not-found.tsx"),
 ] satisfies RouteConfig;

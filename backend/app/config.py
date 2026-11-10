@@ -6,6 +6,9 @@ Todas las variables se leen con prefijo `ALUCARD_` desde el entorno o un `.env`.
 
 from __future__ import annotations
 
+import os
+import shutil
+import sys
 from functools import lru_cache
 from pathlib import Path
 
@@ -28,6 +31,7 @@ class Settings(BaseSettings):
         env_prefix="ALUCARD_",
         env_file=".env",
         extra="ignore",
+        populate_by_name=True,
     )
 
     app_name: str = "AlucardiosDataBase API"
@@ -60,6 +64,37 @@ class Settings(BaseSettings):
     megacmd_bin: str = "megacmd"
     mega_export_bin: str = "mega-export"
     mega_timeout_s: int = 180
+
+    # ── Actualización guiada desde la interfaz ─────────────
+    # El paquete de escritorio ejecuta el backend en el mismo equipo que MEGAcmd;
+    # estas rutas permiten que el binario final las resuelva sin tocar el repo.
+    # Los secretos viven fuera de la BD y fuera de git (ver mega_setup.py).
+    mega_bin_dir: Path | None = Field(
+        default=None,
+        validation_alias=AliasChoices("MEGA_BIN", "ALUCARD_MEGA_BIN"),
+    )
+    mega_cuentas_path: Path | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "ALUCARD_MEGA_CUENTAS",
+            "ALUCARD_MEGA_CUENTAS_PATH",
+        ),
+    )
+    mega_env_path: Path | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "ALUCARD_MEGA_ENV",
+            "ALUCARD_MEGA_ENV_PATH",
+        ),
+    )
+    mega_scripts_dir: Path | None = None
+    mega_python_bin: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("ALUCARD_PYTHON", "ALUCARD_MEGA_PYTHON"),
+    )
+    mega_update_timeout_s: int = 7200
+    actualizacion_estado_path: Path | None = None
+    actualizacion_log_path: Path | None = None
 
     # ── Frescura del volcado (pipeline de actualización) ────
     # Edad máxima (horas) que puede tener el volcado canónico antes de que el
@@ -159,6 +194,81 @@ class Settings(BaseSettings):
             p = Path(self.estado_cuentas_path)
             return p if p.is_absolute() else (project_root() / p).resolve()
         return self.resolved_db_path.parent / "estado_cuentas.json"
+
+    # ── Derivados de la actualización guiada ──────────────
+    @staticmethod
+    def _ruta_config(valor: Path | None, defecto: Path) -> Path:
+        if valor is None:
+            return defecto.expanduser()
+        p = Path(valor).expanduser()
+        return p if p.is_absolute() else (project_root() / p).resolve()
+
+    @property
+    def resolved_mega_cuentas(self) -> Path:
+        """Pool de las tres cuentas, fuera del repo y de la BD."""
+        return self._ruta_config(
+            self.mega_cuentas_path,
+            Path.home() / ".config" / "alucard" / "mega_cuentas.txt",
+        )
+
+    @property
+    def resolved_mega_env(self) -> Path:
+        """Credencial preferida (la que MEGAcmd intenta primero)."""
+        return self._ruta_config(
+            self.mega_env_path,
+            Path.home() / ".config" / "alucard" / "mega.env",
+        )
+
+    @property
+    def resolved_mega_scripts(self) -> Path:
+        """Scripts host reutilizados por la actualización (no se reimplementan)."""
+        return self._ruta_config(self.mega_scripts_dir, project_root() / "scripts")
+
+    @property
+    def resolved_mega_bin(self) -> Path:
+        """Directorio de MEGAcmd; admite binario suelto o MEGA_BIN del host."""
+        if self.mega_bin_dir is not None:
+            p = Path(self.mega_bin_dir).expanduser()
+            return p.parent if p.is_file() else p
+        if os.environ.get("MEGA_BIN"):
+            p = Path(os.environ["MEGA_BIN"]).expanduser()
+            return p.parent if p.is_file() else p
+        candidatos: list[Path] = []
+        for nombre in ("mega-cmd", "mega-ls", "mega-cmd.exe", "mega-ls.exe"):
+            encontrado = shutil.which(nombre)
+            if encontrado:
+                candidatos.append(Path(encontrado).resolve().parent)
+        candidatos += [
+            Path.home() / "opt" / "megacmd" / "usr" / "bin",
+            Path("/opt/megacmd/usr/bin"),
+            Path("/usr/local/bin"),
+        ]
+        for candidato in candidatos:
+            if any(
+                (candidato / nombre).is_file()
+                for nombre in ("mega-cmd", "mega-cmd.exe", "mega-ls", "mega-ls.exe")
+            ):
+                return candidato
+        return candidatos[0] if candidatos else Path("/nonexistent")
+
+    @property
+    def resolved_mega_python(self) -> str:
+        """Intérprete que ejecuta los scripts; empaquetable con ALUCARD_PYTHON."""
+        return self.mega_python_bin or sys.executable
+
+    @property
+    def resolved_actualizacion_estado(self) -> Path:
+        return self._ruta_config(
+            self.actualizacion_estado_path,
+            self.resolved_db_path.parent / "actualizacion_estado.json",
+        )
+
+    @property
+    def resolved_actualizacion_log(self) -> Path:
+        return self._ruta_config(
+            self.actualizacion_log_path,
+            self.resolved_db_path.parent / "actualizacion.log",
+        )
 
     @property
     def cors_origin_list(self) -> list[str]:

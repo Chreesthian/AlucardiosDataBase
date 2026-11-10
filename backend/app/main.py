@@ -8,15 +8,19 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import sessionmaker
 
 from . import __version__
 from .config import Settings
 from .config import settings as default_settings
 from .db import build_engine, create_schema
-from .routers import catalog, download, enrich, health, library, novedades, retro, sync
+from .mega_setup import MegaSetupService
+from .routers import catalog, download, enrich, health, library, novedades, retro, setup, sync
 
 
 def create_app(settings_: Settings | None = None) -> FastAPI:
@@ -52,6 +56,9 @@ def create_app(settings_: Settings | None = None) -> FastAPI:
     app.state.engine_retro = engine_retro
     app.state.session_factory_retro = session_factory_retro
     app.state.settings = cfg
+    # La actualización usa el mismo motor/BD; el runner comprueba si MEGAcmd
+    # existe en ESTE equipo antes de aceptar credenciales.
+    app.state.mega_setup = MegaSetupService(cfg, engine)
 
     app.add_middleware(
         CORSMiddleware,
@@ -75,6 +82,24 @@ def create_app(settings_: Settings | None = None) -> FastAPI:
     app.include_router(novedades.router)
     # Sección aparte: ROMs retro (otra BD, otro volcado, otra cuenta del pool).
     app.include_router(retro.router)
+    app.include_router(setup.router)
+
+    @app.exception_handler(RequestValidationError)
+    async def _validation_error(request: Request, exc: RequestValidationError):
+        """No devolver el cuerpo inválido de la pantalla MEGA.
+
+        Pydantic incluye `input` en algunos errores; para las cuentas eso podría
+        reflejar una contraseña en la respuesta HTTP o en un log. El resto de la
+        API conserva el comportamiento estándar de FastAPI.
+        """
+        if request.url.path.startswith("/api/setup/mega"):
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "detail": "Revisa las cuentas MEGA: faltan datos o el formato no es válido."
+                },
+            )
+        return await request_validation_exception_handler(request, exc)
 
     @app.get("/")
     def root() -> dict:

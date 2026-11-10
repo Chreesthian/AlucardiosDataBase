@@ -213,6 +213,37 @@ export interface CuentasEstadoOut {
   aviso: string | null;
 }
 
+export type MegaUpdateEstado = "inactivo" | "en_curso" | "ok" | "error";
+
+export interface MegaCuentaOut {
+  email: string;
+  password_guardada: boolean;
+  preferida: boolean;
+}
+
+export interface MegaActualizacionOut {
+  estado: MegaUpdateEstado;
+  fase: string | null;
+  mensaje: string | null;
+  inicio: string | null;
+  fin: string | null;
+  cuenta: string | null;
+  resumen: Record<string, unknown> | null;
+  error: string | null;
+}
+
+export interface MegaSetupOut {
+  disponible: boolean;
+  motivo: string | null;
+  cuentas: MegaCuentaOut[];
+  actualizacion: MegaActualizacionOut;
+}
+
+export interface MegaCuentaIn {
+  email: string;
+  password: string;
+}
+
 export type TipoNovedad = "juego_nuevo" | "update_nuevo" | "dlc_nuevo" | "contenido_nuevo";
 
 export interface NovedadOut {
@@ -287,11 +318,13 @@ export interface RetroParams {
 }
 
 // ── transporte ──────────────────────────────────────────────────────────────
-async function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
+async function requestJSON<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers);
+  headers.set("Accept", "application/json");
   const res = await fetch(`${apiBase()}${path}`, {
-    headers: { Accept: "application/json" },
+    ...init,
     cache: "no-store",
-    signal,
+    headers,
   });
   if (!res.ok) {
     let detail = "";
@@ -304,6 +337,18 @@ async function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
     throw new Error(`API ${res.status}: ${path}${detail ? ` ${detail}` : ""}`);
   }
   return (await res.json()) as T;
+}
+
+function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
+  return requestJSON<T>(path, { signal });
+}
+
+function postJSON<T>(path: string, body: unknown): Promise<T> {
+  return requestJSON<T>(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }
 
 function qs(params: Record<string, string | number | undefined>): string {
@@ -333,6 +378,12 @@ export const api = {
     getJSON<TitleListOut>(`/api/retro/titles${qs({ ...params })}`),
   retroTitle: (slug: string) =>
     getJSON<TitleDetailOut>(`/api/retro/titles/${encodeURIComponent(slug)}`),
+  megaSetup: () => getJSON<MegaSetupOut>("/api/setup/mega"),
+  megaUpdate: (cuentas?: MegaCuentaIn[]) =>
+    postJSON<MegaSetupOut>(
+      "/api/setup/mega/update",
+      cuentas ? { cuentas } : {},
+    ),
   search: (q: string, limit = 8, signal?: AbortSignal) =>
     getJSON<TitleListOut>(`/api/titles${qs({ q, limit })}`, signal),
   retroSearch: (q: string, limit = 8, signal?: AbortSignal) =>

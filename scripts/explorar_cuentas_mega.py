@@ -868,7 +868,10 @@ def main() -> int:
     args = ap.parse_args()
 
     mega_bin = Path(args.mega_bin).expanduser()
-    if not (mega_bin / "mega-cmd").is_file():
+    if not any(
+        (mega_bin / nombre).is_file()
+        for nombre in ("mega-cmd", "mega-cmd.exe")
+    ):
         raise SystemExit(f"MEGAcmd no disponible en {mega_bin} (usa --mega-bin o MEGA_BIN)")
     cuentas_path = Path(args.cuentas).expanduser()
     cuentas = leer_cuentas(cuentas_path)

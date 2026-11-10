@@ -204,6 +204,18 @@ make credenciales     # stores this week's MEGA_EMAIL/MEGA_PASSWORD (chmod 600)
   only the real new files show up in "Novedades". Re-index the links against the
   new share with `./scripts/enlazar_descargas.sh` (host, resumable).
 
+### Guided update from the web UI
+
+On a desktop/host install with MEGAcmd, open `/actualizar` and enter the three
+accounts of the rotation. The page stores them outside the repository
+(`chmod 600`), checks which one can see the library and runs the same pipeline as
+always: pre-flight → dump → incremental sync. The preferred account is tried
+first; the other two are only tried when it cannot see the library. If the pre-flight
+or the dump guard fails, the database is left untouched. No password is stored
+in SQLite, returned by the API or written to a log. A container without MEGAcmd
+shows the action as unavailable; the desktop package runs it on the user's
+machine.
+
 ## Retro collection (separate catalog)
 
 The MEGA account pool also carries a **second, unrelated library**: a retro ROM

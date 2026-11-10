@@ -114,6 +114,25 @@ test("detalle de un juego con versiones y archivos", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+test("actualizar: la pantalla de cuentas MEGA carga", async ({ page }) => {
+  const setup = (await apiGet("/api/setup/mega")).body;
+  await page.goto("/actualizar");
+  await expect(
+    page.getByRole("heading", { level: 1 }),
+  ).toContainText("Actualizar biblioteca");
+  await expect(page.getByTestId("mega-setup")).toBeVisible();
+
+  if (setup.disponible) {
+    await expect(page.locator(".setup-account")).toHaveCount(3);
+    await expect(page.locator(".setup-primary")).toBeVisible();
+    await expect(page.locator("input[type=email]")).toHaveCount(3);
+  } else {
+    await expect(
+      page.getByText("Actualización no disponible en este equipo."),
+    ).toBeVisible();
+  }
+});
+
 test("navegación directa a detalle inexistente muestra estado controlado", async ({ page }) => {
   const response = await page.goto("/game/slug-que-no-existe/");
   expect(response?.status()).toBe(404);

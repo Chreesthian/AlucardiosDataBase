@@ -3237,3 +3237,505 @@ details[open] > .version__head .version__chevron {
     animation-duration: 0.01ms;
   }
 }
+
+/* ── actualizar biblioteca (cuentas MEGA) ────────────────────────────────── */
+.site-top__nav a[data-setup] {
+  display: none;
+}
+
+@media (min-width: 900px) {
+  .site-top__nav a[data-setup] {
+    display: inline-flex;
+  }
+}
+
+.setup-page {
+  padding-top: clamp(5.5rem, 9vw, 8rem);
+  padding-bottom: var(--space-section);
+}
+
+.setup-head {
+  max-width: 74ch;
+  padding-bottom: var(--space-block);
+  border-bottom: var(--rule-weight) solid var(--rule);
+}
+
+.setup-lede {
+  max-width: 64ch;
+  margin-top: 0.9rem;
+  font-size: var(--type-body);
+  line-height: 1.55;
+  color: var(--text-body);
+}
+
+.setup-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(19rem, 0.75fr);
+  gap: var(--space-block);
+  align-items: start;
+  margin-top: var(--space-block);
+}
+
+@media (max-width: 980px) {
+  .setup-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.setup-panel {
+  min-width: 0;
+  padding-top: 1rem;
+  border-top: var(--rule-weight) solid var(--rule);
+}
+
+.setup-form {
+  padding-bottom: var(--space-block);
+}
+
+.setup-note {
+  max-width: 66ch;
+  margin-top: 0.8rem;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--text-subtle);
+}
+
+.setup-accounts {
+  display: grid;
+  margin-top: 1.2rem;
+  border-top: 1px solid color-mix(in oklab, var(--rule) 38%, transparent);
+}
+
+.setup-account {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 0.7rem 1rem;
+  align-items: end;
+  padding: 1rem 0;
+  border-bottom: 1px solid color-mix(in oklab, var(--rule) 38%, transparent);
+}
+
+.setup-account__num {
+  padding-bottom: 0.55rem;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.04em;
+  color: var(--text-label);
+}
+
+.setup-account__field {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.setup-account__field label {
+  font-family: var(--font-label);
+  font-size: 0.62rem;
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  color: var(--text-subtle);
+}
+
+.setup-account__field input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid color-mix(in oklab, var(--rule) 48%, transparent);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklab, var(--surface-raised) 72%, transparent);
+  color: var(--text-body);
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+}
+
+.setup-account__field input::placeholder {
+  color: var(--text-subtle);
+  opacity: 0.8;
+}
+
+.setup-account__field input:focus {
+  border-color: var(--brand);
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--brand) 24%, transparent);
+}
+
+.setup-account__field input:disabled {
+  opacity: 0.65;
+}
+
+.setup-account__password {
+  position: relative;
+}
+
+.setup-account__password input {
+  padding-right: 4.4rem;
+}
+
+.setup-reveal {
+  position: absolute;
+  right: 0.3rem;
+  bottom: 0.3rem;
+  min-height: 34px;
+  padding: 0.2rem 0.5rem;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  font-family: var(--font-label);
+  font-size: 0.58rem;
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  color: var(--text-label);
+  cursor: pointer;
+}
+
+.setup-reveal:hover {
+  color: var(--text-mark);
+}
+
+.setup-account__preferred {
+  align-self: center;
+  padding: 0.2rem 0.45rem;
+  border: 1px solid color-mix(in oklab, var(--surface-accent-3) 55%, transparent);
+  border-radius: var(--radius-pill);
+  font-family: var(--font-label);
+  font-size: 0.56rem;
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  color: var(--surface-accent-3);
+  white-space: nowrap;
+}
+
+.setup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 1.4rem;
+}
+
+.setup-primary,
+.setup-secondary {
+  min-height: 48px;
+  padding: 0.7rem 1rem;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-label);
+  font-size: 0.7rem;
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease,
+    border-color 0.18s ease,
+    opacity 0.18s ease;
+}
+
+.setup-primary {
+  border: 1px solid var(--surface-accent-1);
+  background: var(--surface-accent-1);
+  color: var(--on-accent-1);
+}
+
+.setup-primary:hover:not(:disabled) {
+  border-color: var(--surface-accent-2);
+  background: var(--surface-accent-2);
+  color: var(--text-on-accent);
+}
+
+.setup-secondary {
+  border: 1px solid color-mix(in oklab, var(--rule) 55%, transparent);
+  background: transparent;
+  color: var(--text-mark);
+}
+
+.setup-secondary:hover:not(:disabled) {
+  border-color: var(--text-mark);
+}
+
+.setup-primary:disabled,
+.setup-secondary:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.setup-error {
+  margin-top: 1rem;
+  padding: 0.7rem 0.85rem;
+  border-left: 3px solid var(--surface-accent-1);
+  background: color-mix(in oklab, var(--surface-accent-1) 10%, transparent);
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: var(--text-body);
+}
+
+.setup-alert {
+  max-width: 74ch;
+  margin-top: var(--space-block);
+  padding: 1rem 1.1rem;
+  border: 1px solid color-mix(in oklab, var(--rule) 45%, transparent);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklab, var(--surface-raised) 55%, transparent);
+}
+
+.setup-alert strong {
+  display: block;
+  font-family: var(--font-label);
+  font-size: 0.7rem;
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  color: var(--text-mark);
+}
+
+.setup-alert p {
+  margin-top: 0.45rem;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--text-body);
+}
+
+.setup-alert--warn {
+  border-color: color-mix(in oklab, var(--surface-accent-2) 60%, transparent);
+  background: color-mix(in oklab, var(--surface-accent-2) 9%, transparent);
+}
+
+.setup-alert--error {
+  border-color: color-mix(in oklab, var(--surface-accent-1) 65%, transparent);
+  background: color-mix(in oklab, var(--surface-accent-1) 9%, transparent);
+}
+
+.setup-alert__note {
+  font-size: 0.86rem !important;
+  color: var(--text-subtle) !important;
+}
+
+.setup-status {
+  position: sticky;
+  top: 5.5rem;
+}
+
+@media (max-width: 980px) {
+  .setup-status {
+    position: static;
+  }
+}
+
+.setup-status__head {
+  display: flex;
+  gap: 0.7rem;
+  align-items: flex-start;
+  margin-top: 1rem;
+}
+
+.setup-status__head p {
+  font-size: 0.98rem;
+  line-height: 1.5;
+  color: var(--text-body);
+}
+
+.setup-spinner {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 0.2rem;
+  border: 2px solid color-mix(in oklab, var(--rule) 35%, transparent);
+  border-top-color: var(--brand);
+  border-radius: 50%;
+  animation: setup-spin 0.8s linear infinite;
+}
+
+@keyframes setup-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+
+.setup-progress {
+  display: grid;
+  gap: 0.55rem;
+  margin: 1.2rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.setup-progress li {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  font-family: var(--font-label);
+  font-size: 0.64rem;
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  color: var(--text-subtle);
+}
+
+.setup-progress li > span {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 1.4rem;
+  height: 1.4rem;
+  border: 1px solid color-mix(in oklab, var(--rule) 35%, transparent);
+  border-radius: 50%;
+  font-size: 0.58rem;
+}
+
+.setup-progress .is-done {
+  color: var(--text-mark);
+}
+
+.setup-progress .is-done > span {
+  border-color: var(--surface-accent-3);
+  background: var(--surface-accent-3);
+  color: var(--on-accent-3);
+}
+
+.setup-progress .is-active {
+  color: var(--text-mark);
+}
+
+.setup-progress .is-active > span {
+  border-color: var(--brand);
+  color: var(--brand);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--brand) 18%, transparent);
+}
+
+.setup-progress .is-error {
+  color: var(--surface-accent-1);
+}
+
+.setup-progress .is-error > span {
+  border-color: var(--surface-accent-1);
+  color: var(--surface-accent-1);
+}
+
+.setup-result {
+  margin-top: 1.2rem;
+  padding: 0.85rem 0.9rem;
+  border: 1px solid color-mix(in oklab, var(--rule) 42%, transparent);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklab, var(--surface-raised) 55%, transparent);
+}
+
+.setup-result strong {
+  display: block;
+  font-family: var(--font-label);
+  font-size: 0.68rem;
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  color: var(--text-mark);
+}
+
+.setup-result p {
+  margin-top: 0.35rem;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: var(--text-body);
+}
+
+.setup-result--ok {
+  border-color: color-mix(in oklab, var(--surface-accent-3) 55%, transparent);
+  background: color-mix(in oklab, var(--surface-accent-3) 8%, transparent);
+}
+
+.setup-result--error {
+  border-color: color-mix(in oklab, var(--surface-accent-1) 60%, transparent);
+  background: color-mix(in oklab, var(--surface-accent-1) 8%, transparent);
+}
+
+.setup-result__account {
+  font-family: var(--font-label);
+  font-size: 0.62rem !important;
+  letter-spacing: 0.02em;
+  color: var(--text-subtle) !important;
+  overflow-wrap: anywhere;
+}
+
+.setup-result__link {
+  display: inline-block;
+  margin-top: 0.55rem;
+  border-bottom: 1px solid currentColor;
+  font-family: var(--font-label);
+  font-size: 0.66rem;
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  color: var(--text-mark);
+}
+
+.setup-current {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 1.4rem 0 0;
+  border-top: 1px solid color-mix(in oklab, var(--rule) 38%, transparent);
+}
+
+.setup-current div {
+  min-width: 0;
+  padding: 0.7rem 0.5rem 0 0;
+}
+
+.setup-current dt {
+  font-family: var(--font-label);
+  font-size: 0.58rem;
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  color: var(--text-subtle);
+}
+
+.setup-current dd {
+  margin: 0.22rem 0 0;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.03em;
+  color: var(--text-mark);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 700px) {
+  .setup-account {
+    grid-template-columns: 2rem minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .setup-account__field {
+    grid-column: 2;
+  }
+
+  .setup-account__num {
+    grid-row: 1 / span 2;
+    padding-top: 1.1rem;
+    padding-bottom: 0;
+  }
+
+  .setup-account__preferred {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .setup-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .setup-primary,
+  .setup-secondary {
+    width: 100%;
+  }
+
+  .setup-current {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .setup-spinner {
+    animation: none;
+  }
+
+  .setup-primary,
+  .setup-secondary {
+    transition: none;
+  }
+}

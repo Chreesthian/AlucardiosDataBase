@@ -53,6 +53,7 @@ export function SiteFooter({
           <div className="contact__links">
             <Link to="/novedades">Novedades ↗</Link>
             <Link to="/retro">Retro ↗</Link>
+            <Link to="/actualizar">Actualizar biblioteca ↗</Link>
           </div>
         </div>
 
@@ -78,6 +79,7 @@ export function SiteFooter({
           <div className="drain__links">
             <Link to="/novedades">Novedades ↗</Link>
             <Link to="/retro">Retro ↗</Link>
+            <Link to="/actualizar">Actualizar ↗</Link>
             <a href="#top">↑ Top</a>
           </div>
         </div>

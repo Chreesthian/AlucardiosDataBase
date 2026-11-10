@@ -14,6 +14,9 @@ export function SiteTop() {
       <nav className="site-top__nav" aria-label="Secciones">
         <Link to="/novedades">Novedades ↗</Link>
         <Link to="/retro">Retro ↗</Link>
+        <Link to="/actualizar" data-setup>
+          Actualizar ↗
+        </Link>
       </nav>
     </header>
   );

@@ -64,6 +64,13 @@ SSR frontend and a Docker Compose deployment of supervised workers.
   (`INSHARE <owner>:<folder>`), credentials come from `scripts/lib/mega_session.sh`
   (`make credenciales`), and a rotation that reaches less data must abort loudly
   (`refrescar_volcado.py` sector guard) instead of emptying the catalog.
+- The guided update from `/actualizar` stores exactly the three rotating accounts
+  in `ALUCARD_MEGA_CUENTAS` and the preferred one in `ALUCARD_MEGA_ENV` (0600,
+  outside the repo). Never put those passwords in SQLite, an API response or a
+  log. It must reuse `verificar_rotacion.py`, `refrescar_volcado.py` and
+  `app.sync.refresh`; do not duplicate the MEGA/login/diff pipeline. It only
+  runs where MEGAcmd exists: a container without MEGAcmd must report the update
+  as unavailable, never pretend to update.
 - The rotation failover is guided by the LIBRARY, never by the login: an account
   can log in and still mount another share. Keep `verificar_rotacion.elegir_del_pool`
   as the only path that rotates accounts in the pre-flight, keep restoring the

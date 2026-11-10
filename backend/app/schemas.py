@@ -230,6 +230,46 @@ class SyncRunOut(BaseModel):
     error: str | None = None
 
 
+# ── configuración MEGA desde la interfaz ─────────────────────
+class MegaCuentaIn(BaseModel):
+    """Entrada de una cuenta; la contraseña nunca se devuelve."""
+
+    email: str
+    password: str
+
+
+class MegaUpdateIn(BaseModel):
+    """Si `cuentas` falta, se reutilizan las ya guardadas en el equipo."""
+
+    cuentas: list[MegaCuentaIn] | None = None
+
+
+class MegaCuentaOut(BaseModel):
+    email: str
+    password_guardada: bool = True
+    preferida: bool = False
+
+
+class MegaActualizacionOut(BaseModel):
+    estado: str = "inactivo"
+    fase: str | None = None
+    mensaje: str | None = None
+    inicio: str | None = None
+    fin: str | None = None
+    cuenta: str | None = None
+    resumen: dict | None = None
+    error: str | None = None
+
+
+class MegaSetupOut(BaseModel):
+    """Estado de la pantalla de actualización; nunca incluye contraseñas."""
+
+    disponible: bool
+    motivo: str | None = None
+    cuentas: list[MegaCuentaOut] = []
+    actualizacion: MegaActualizacionOut
+
+
 # ── retro (sección aparte) ───────────────────────────────────
 class RetroStatusOut(BaseModel):
     """Frescura de la colección retro (ROMs), que vive en SU PROPIA BD/volcado.

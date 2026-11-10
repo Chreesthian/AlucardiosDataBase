@@ -70,13 +70,17 @@ _RE_INSHARE = re.compile(r"^INSHARE on (.+?)\s*(?:\([^)]*\))?$", re.MULTILINE)
 
 
 def _binario(nombre: str, mega_bin: Path) -> str:
-    """Ruta absoluta al binario MEGAcmd (`--mega-bin` → PATH)."""
+    """Ruta absoluta al binario MEGAcmd (`--mega-bin` → PATH).
+
+    En Windows los ejecutables llevan `.exe`; se aceptan ambos nombres para que
+    el paquete de escritorio funcione sin variables extra.
+    """
     encontrado = shutil.which(nombre)
     if encontrado:
         return encontrado
-    candidato = mega_bin / nombre
-    if candidato.is_file():
-        return str(candidato)
+    for candidato in (mega_bin / nombre, mega_bin / f"{nombre}.exe"):
+        if candidato.is_file():
+            return str(candidato)
     raise SystemExit(f"MEGAcmd no disponible: no encuentro {nombre!r} (revisa --mega-bin)")
 
 

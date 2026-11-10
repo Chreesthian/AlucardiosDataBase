@@ -26,6 +26,13 @@ def build_app(tmp_path, text: str = SAMPLE_DUMP, retro_text: str | None = None):
         retro_database_url=f"sqlite:///{retro_db}",
         # El volcado retro por defecto apunta al repo; en tests, a un temporal.
         retro_dump_path=tmp_path / "mega_retro.txt",
+        # La pantalla de actualización nunca debe tocar los datos reales del host.
+        mega_cuentas_path=tmp_path / "mega_cuentas.txt",
+        mega_env_path=tmp_path / "mega.env",
+        mega_scripts_dir=tmp_path / "scripts",
+        mega_bin_dir=tmp_path / "mega-bin",
+        actualizacion_estado_path=tmp_path / "actualizacion_estado.json",
+        actualizacion_log_path=tmp_path / "actualizacion.log",
     )
     app = create_app(cfg)
 

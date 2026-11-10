@@ -525,6 +525,60 @@ def _imprimir(informe: dict, estado_path: Path | None, quiet: bool) -> None:
         print(f"   · estado: {estado_path}", flush=True)
 
 
+def _email_preferida(env_path: Path | None) -> str | None:
+    """MEGA_EMAIL del fichero preferido, sin tocar la contraseña."""
+    if env_path is None or not env_path.is_file():
+        return None
+    try:
+        texto = env_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    for linea in texto.splitlines():
+        clave, separador, valor = linea.partition("=")
+        if separador and clave.strip() == "MEGA_EMAIL" and valor.strip():
+            return valor.strip().strip('"').strip("'")
+    return None
+
+
+def login_preferida(
+    mega_bin: Path,
+    cuentas_path: Path,
+    *,
+    preferred_path: Path | None = None,
+    iniciar: Callable[..., dict] | None = None,
+    quiet: bool = False,
+) -> dict | None:
+    """Inicia sesión con la PRIMERA cuenta del pool antes del pre-vuelo.
+
+    El pre-vuelo normal reutiliza la sesión activa si ya ve la biblioteca. Para
+    una actualización lanzada desde la interfaz queremos aplicar las credenciales
+    recién guardadas, así que se fuerza primero el login de la cuenta preferida;
+    si falla, `guardar_sesion` restaura la sesión anterior y el failover del pool
+    sigue decidiendo por biblioteca. No recibe ni imprime contraseñas.
+    """
+    pool = leer_pool(Path(cuentas_path).expanduser())
+    if not pool:
+        return None
+    preferida = _email_preferida(preferred_path)
+    elegida = next(
+        (
+            (email, password)
+            for email, password in pool
+            if preferida and email.lower() == preferida.lower()
+        ),
+        pool[0],
+    )
+    iniciar = iniciar or ex.guardar_sesion
+    email, password = elegida
+    resultado = iniciar(mega_bin, email, password)
+    if not quiet:
+        print(
+            f"   · credencial preferida {email}: {resultado.get('estado')}",
+            flush=True,
+        )
+    return {"email": email, **resultado}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description="Pre-vuelo de rotación: ¿la cuenta MEGA de la semana ve la "
@@ -552,6 +606,12 @@ def main() -> int:
         "con la primera cuenta que sí la ve (deja esa sesión activa)",
     )
     ap.add_argument(
+        "--login-preferida",
+        action="store_true",
+        help="con --elegir-cuenta: antes del pre-vuelo, inicia sesión con la primera "
+        "cuenta del pool (credenciales recién guardadas desde la interfaz)",
+    )
+    ap.add_argument(
         "--cuentas",
         default=str(MEGA_CUENTAS_POR_DEFECTO),
         help="pool de cuentas (`email<sep>password`, chmod 600) para --elegir-cuenta",
@@ -571,7 +631,10 @@ def main() -> int:
     args = ap.parse_args()
 
     mega_bin = Path(args.mega_bin).expanduser()
-    if not (mega_bin / "mega-cmd").is_file():
+    if not any(
+        (mega_bin / nombre).is_file()
+        for nombre in ("mega-cmd", "mega-cmd.exe")
+    ):
         print(f"MEGAcmd no disponible en {mega_bin} (usa --mega-bin o MEGA_BIN)", file=sys.stderr)
         return EXIT_SIN_SESION
 
@@ -584,6 +647,13 @@ def main() -> int:
 
     volcado = Path(args.volcado).expanduser().resolve()
     if args.elegir_cuenta:
+        if args.login_preferida:
+            login_preferida(
+                mega_bin,
+                Path(args.cuentas),
+                preferred_path=Path(args.env_destino),
+                quiet=args.quiet,
+            )
         informe = elegir_del_pool(
             mega_bin,
             volcado,
