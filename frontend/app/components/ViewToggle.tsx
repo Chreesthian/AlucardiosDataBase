@@ -22,6 +22,7 @@ export function ViewToggle({
         data-active={view === "lista"}
         aria-current={view === "lista" ? "page" : undefined}
         title="Ver como lista"
+        preventScrollReset
       >
         <svg viewBox="0 0 16 16" aria-hidden="true">
           <path d="M2 3.5h12M2 8h12M2 12.5h12" />
@@ -34,6 +35,7 @@ export function ViewToggle({
         data-active={view === "cuadricula"}
         aria-current={view === "cuadricula" ? "page" : undefined}
         title="Ver como cuadrícula"
+        preventScrollReset
       >
         <svg viewBox="0 0 16 16" aria-hidden="true">
           <path d="M2.5 2.5h4v4h-4zM9.5 2.5h4v4h-4zM2.5 9.5h4v4h-4zM9.5 9.5h4v4h-4z" />

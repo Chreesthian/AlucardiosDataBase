@@ -1,5 +1,5 @@
 /* ============================================================================
-   AlucardiosDataBase · sistema visual "riso / house"
+   AlucardioDataBase · sistema visual "riso / house"
    ----------------------------------------------------------------------------
    Clon 1:1 de la identidad de https://charbeltannous.com/ adaptado al catálogo:
    - mismas escalas tipográficas, ritmos ( --space-* ), radios y motion tokens.
@@ -1517,7 +1517,7 @@ img {
 }
 
 .drain::after {
-  content: "ALUCARDIOS";
+  content: "ALUCARDIO";
   position: absolute;
   inset-inline: -2%;
   top: 10%;

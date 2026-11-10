@@ -13,7 +13,7 @@ import { edadLegible, formatBytes, formatNumber } from "~/lib/format";
 const LIMIT = 60;
 
 export const meta: MetaFunction = () => [
-  { title: "Retro — AlucardiosDataBase" },
+  { title: "Retro — Alucardio DataBase" },
   {
     name: "description",
     content:
@@ -157,6 +157,7 @@ export default function Retro() {
               to={`/retro${mkQuery(current, { sistema: "", offset: 0 })}`}
               className="chip"
               data-active={sistema === ""}
+              preventScrollReset
             >
               Todos
             </Link>
@@ -167,6 +168,7 @@ export default function Retro() {
                 className="chip"
                 data-active={sistema === bucket.letter}
                 title={`${bucket.titles} juegos · ${bucket.plataforma?.nombre ?? bucket.letter}`}
+                preventScrollReset
               >
                 {bucket.plataforma?.corto ?? bucket.letter}
                 <small>{bucket.titles}</small>
@@ -189,6 +191,7 @@ export default function Retro() {
                 key={value}
                 to={`/retro${mkQuery(current, { sort: value, offset: 0 })}`}
                 data-active={sort === value}
+                preventScrollReset
               >
                 {label}
               </Link>
@@ -210,7 +213,10 @@ export default function Retro() {
 
         <nav className="pager" aria-label="Paginación">
           {offset > 0 ? (
-            <Link to={`/retro${mkQuery(current, { offset: Math.max(0, offset - LIMIT) })}`}>
+            <Link
+              to={`/retro${mkQuery(current, { offset: Math.max(0, offset - LIMIT) })}`}
+              preventScrollReset
+            >
               ← Anterior
             </Link>
           ) : (
@@ -220,7 +226,10 @@ export default function Retro() {
             {offset + 1}–{offset + items.length} de {total}
           </span>
           {hasNext ? (
-            <Link to={`/retro${mkQuery(current, { offset: offset + LIMIT })}`}>
+            <Link
+              to={`/retro${mkQuery(current, { offset: offset + LIMIT })}`}
+              preventScrollReset
+            >
               Siguiente →
             </Link>
           ) : (

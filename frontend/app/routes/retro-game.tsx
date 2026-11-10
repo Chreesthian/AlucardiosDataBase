@@ -6,10 +6,10 @@ import { DetailView } from "./game";
 
 export const meta: MetaFunction<typeof loader> = ({ data: loaded }) => {
   const detail = loaded?.detail;
-  if (!detail) return [{ title: "ROM no encontrada — AlucardiosDataBase" }];
+  if (!detail) return [{ title: "ROM no encontrada — Alucardio DataBase" }];
   return [
     {
-      title: `${detail.igdb_name?.trim() || detail.name} — Retro · AlucardiosDataBase`,
+      title: `${detail.igdb_name?.trim() || detail.name} — Retro · Alucardio DataBase`,
     },
   ];
 };

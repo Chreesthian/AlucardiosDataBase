@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import type { LoaderFunctionArgs, MetaFunction } from "react-router";
-import { data, Link, useLoaderData, useRouteLoaderData } from "react-router";
+import { data, Link, useLoaderData, useNavigate, useRouteLoaderData } from "react-router";
 
 import { ImageLightbox, type LightboxImage } from "~/components/ImageLightbox";
 import { SiteFooter } from "~/components/SiteFooter";
@@ -29,10 +29,10 @@ const TITULO_VERSION: Record<string, string> = {
 
 export const meta: MetaFunction<typeof loader> = ({ data: loaded }) => {
   const detail = loaded?.detail;
-  if (!detail) return [{ title: "Juego no encontrado — AlucardiosDataBase" }];
+  if (!detail) return [{ title: "Juego no encontrado — Alucardio DataBase" }];
   const oficial = detail.igdb_name?.trim();
   return [
-    { title: `${oficial || detail.name} — AlucardiosDataBase` },
+    { title: `${oficial || detail.name} — Alucardio DataBase` },
     {
       name: "description",
       content:
@@ -109,6 +109,15 @@ export function DetailView({
   backTo?: string;
   backLabel?: string;
 }) {
+  const navigate = useNavigate();
+  const volverALista = (event: MouseEvent<HTMLAnchorElement>) => {
+    // Si venimos de una lista, retrocedemos en el historial: así se recupera
+    // la URL (q/filtros) y ScrollRestoration devuelve la posición exacta.
+    if (window.history.state?.idx > 0) {
+      event.preventDefault();
+      navigate(-1);
+    }
+  };
   const ficha: FichaIGDB | null = detail.ficha ?? null;
   const oficial =
     detail.igdb_name?.trim() || first(ficha?.nombre_oficial) || "";
@@ -273,7 +282,11 @@ export function DetailView({
             )}
 
             <div className="detail-banner__bar page-shell">
-              <Link to={backTo} className="back-link back-link--on-banner">
+              <Link
+                to={backTo}
+                className="back-link back-link--on-banner"
+                onClick={volverALista}
+              >
                 ← {backLabel}
               </Link>
               <div className="detail-banner__tags">

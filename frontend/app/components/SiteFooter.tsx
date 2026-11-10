@@ -68,7 +68,7 @@ export function SiteFooter({
               </defs>
               <text className="drain__badge-text">
                 <textPath href="#badge-ring" startOffset="0">
-                  Vuelve arriba · © Alucardios · Todo lo que tienes, en un sitio ·
+                  Vuelve arriba · © Alucardio · Todo lo que tienes, en un sitio ·
                 </textPath>
               </text>
               <text x="100" y="120" textAnchor="middle" className="drain__badge-arrow">

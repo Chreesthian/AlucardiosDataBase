@@ -29,7 +29,7 @@ export const links: LinksFunction = () => [
 ];
 
 export const meta: MetaFunction = () => [
-  { title: "AlucardiosDataBase — Biblioteca" },
+  { title: "La biblioteca de Alucardio — Alucardio DataBase" },
   {
     name: "description",
     content:
@@ -37,7 +37,7 @@ export const meta: MetaFunction = () => [
   },
   { name: "theme-color", content: "#111314" },
   { property: "og:type", content: "website" },
-  { property: "og:title", content: "AlucardiosDataBase — Biblioteca" },
+  { property: "og:title", content: "La biblioteca de Alucardio — Alucardio DataBase" },
   {
     property: "og:description",
     content: "Todo lo que vive en tu cuenta MEGA, en un solo sitio.",

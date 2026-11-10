@@ -93,7 +93,10 @@ export function SearchBox({
         const sp = new URLSearchParams(hiddenParams);
         if (q) sp.set("q", q);
         const qs = sp.toString();
-        navigate(qs ? `${formPath}?${qs}` : formPath);
+        // Mantener la posición del usuario: buscar no debe devolverlo al hero.
+        navigate(qs ? `${formPath}?${qs}` : formPath, {
+          preventScrollReset: true,
+        });
       }}
     >
       {Object.entries(hiddenParams).map(([key, value]) =>

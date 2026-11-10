@@ -6,9 +6,9 @@ import { Link } from "react-router";
 export function SiteTop() {
   return (
     <header className="site-top" role="banner">
-      <Link to="/" className="site-top__brand" aria-label="Alucardios DataBase — inicio">
+      <Link to="/" className="site-top__brand" aria-label="Alucardio DataBase — inicio">
         <span className="site-top__mark" aria-hidden="true" />
-        <span>Alucardios</span>
+        <span>Alucardio</span>
       </Link>
       <span className="site-top__now">Biblioteca</span>
       <nav className="site-top__nav" aria-label="Secciones">

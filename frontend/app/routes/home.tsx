@@ -17,7 +17,7 @@ import { fechaLegible, formatBytes, formatNumber } from "~/lib/format";
 const LIMIT = 60;
 
 export const meta: MetaFunction = () => [
-  { title: "AlucardiosDataBase — Biblioteca" },
+  { title: "La biblioteca de Alucardio — Alucardio DataBase" },
   {
     name: "description",
     content:
@@ -106,7 +106,7 @@ export default function Home() {
   return (
     <>
       <h1 className="sr-only" id="page-title">
-        Biblioteca
+        La biblioteca de Alucardio
       </h1>
 
       <Hero
@@ -142,6 +142,7 @@ export default function Home() {
               to={`/${mkQuery(current, { letter: "", offset: 0 })}`}
               className="chip"
               data-active={letter === ""}
+              preventScrollReset
             >
               Todas
             </Link>
@@ -152,6 +153,7 @@ export default function Home() {
                 className="chip"
                 data-active={letter === bucket.letter}
                 title={`${bucket.titles} juegos`}
+                preventScrollReset
               >
                 {bucket.letter}
                 <small>{bucket.titles}</small>
@@ -172,6 +174,7 @@ export default function Home() {
                 key={value}
                 to={`/${mkQuery(current, { sort: value, offset: 0 })}`}
                 data-active={sort === value}
+                preventScrollReset
               >
                 {label}
               </Link>
@@ -193,7 +196,10 @@ export default function Home() {
 
         <nav className="pager" aria-label="Paginación">
           {offset > 0 ? (
-            <Link to={`/${mkQuery(current, { offset: Math.max(0, offset - LIMIT) })}`}>
+            <Link
+              to={`/${mkQuery(current, { offset: Math.max(0, offset - LIMIT) })}`}
+              preventScrollReset
+            >
               ← Anterior
             </Link>
           ) : (
@@ -203,7 +209,12 @@ export default function Home() {
             {offset + 1}–{offset + items.length} de {total}
           </span>
           {hasNext ? (
-            <Link to={`/${mkQuery(current, { offset: offset + LIMIT })}`}>Siguiente →</Link>
+            <Link
+              to={`/${mkQuery(current, { offset: offset + LIMIT })}`}
+              preventScrollReset
+            >
+              Siguiente →
+            </Link>
           ) : (
             <span aria-hidden="true">Siguiente →</span>
           )}

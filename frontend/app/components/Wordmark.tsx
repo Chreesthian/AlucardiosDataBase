@@ -5,7 +5,7 @@
  * letras exactamente al ancho del contenedor.
  */
 export function Wordmark({
-  lines = ["ALUCARDIOS", "DATABASE"],
+  lines = ["LA BIBLIOTECA", "DE ALUCARDIO"],
   className = "",
 }: {
   lines?: [string, string];
@@ -18,7 +18,7 @@ export function Wordmark({
       aria-labelledby="wordmark-title"
       className={`wordmark-svg ${className}`.trim()}
     >
-      <title id="wordmark-title">Alucardios DataBase</title>
+      <title id="wordmark-title">La biblioteca de Alucardio</title>
       <text
         x="500"
         y="248"

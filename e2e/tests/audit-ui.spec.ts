@@ -23,7 +23,11 @@ const CARDS = 'main a[href^="/game/"][title]';
 test("home: SSR renderiza la biblioteca con métricas reales", async ({ page }) => {
   const errors = watchErrors(page);
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Biblioteca" })).toBeVisible();
+  await expect(page).toHaveTitle(/La biblioteca de Alucardio/);
+  await expect(
+    page.getByRole("heading", { name: /La biblioteca de Alucardio/i }),
+  ).toBeVisible();
+  await expect(page.locator(".site-top__brand")).toContainText("Alucardio");
 
   // Métricas del snapshot (vía SSR) presentes en la cabecera.
   await expect(page.getByText("juegos").first()).toBeVisible();
@@ -59,6 +63,33 @@ test("buscador autosuggest resuelve y navega al detalle", async ({ page }) => {
     page.getByRole("heading", { level: 1 }),
   ).toContainText("The Legend of Zelda Echoes of Wisdom");
   expect(errors).toEqual([]);
+});
+
+test("buscador y vuelta al listado conservan la posición", async ({ page }) => {
+  await page.goto("/");
+  const search = page.locator("#search-input");
+  await search.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(200);
+  const before = await page.evaluate(() => window.scrollY);
+
+  await search.fill("Zelda");
+  await search.press("Enter");
+  await page.waitForURL(/[?&]q=Zelda/);
+  await expect(page.locator(".view-bar__count")).toContainText("resultados");
+  const afterSearch = await page.evaluate(() => window.scrollY);
+  expect(Math.abs(afterSearch - before)).toBeLessThan(80);
+
+  const row = page.locator("main a.work-row").first();
+  await row.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(150);
+  const listY = await page.evaluate(() => window.scrollY);
+  await row.click();
+  await page.waitForURL(/\/game\//);
+  await page.locator(".back-link").first().click();
+  await page.waitForURL(/[?&]q=Zelda/);
+  await page.waitForTimeout(600);
+  const afterBack = await page.evaluate(() => window.scrollY);
+  expect(Math.abs(afterBack - listY)).toBeLessThan(120);
 });
 
 test("filtro por letra vía chips (URL ?letter=A)", async ({ page }) => {
