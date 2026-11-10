@@ -7,8 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The retro pre-flight failure is now explained in plain language:**
+  `scripts/volcado_retro.sh --estado` (`make volcado-retro-estado`) added a
+  summary of `data/estado_cuentas_retro.json` per pool account that tells the two
+  very different causes apart: a **stale credential** (`login` failed, because the
+  weekly rotation changed the password → refresh `~/.config/alucard/mega_retro.env`
+  and its account in the pool) versus an account that logs in fine but **no longer
+  sees the ROMs in-share** (it is no longer invited to it). The same summary goes
+  to the log and to stderr when the pre-flight aborts (rc=8), so the cron wrapper
+  (`data/volcado_retro-cron.log`) and `data/volcado_retro.log` say *why* the
+  `/retro` section froze instead of only pointing at a JSON file. It never fails:
+  a half-written or missing JSON, or a host without `python3`, prints nothing.
+
 ### Fixed
 
+- **`dump_fuente` survives a rotation with a large personal cloud:** the source
+  identity of the catalog (`GET /api/sync/status` → `dump_fuente`, the
+  `INSHARE <owner>:<folder>` label) was read from the first 200 lines of the
+  dump. The personal cloud of the account that produced the dump (`CLOUD_DRIVE`,
+  which is never indexed) changes with the weekly rotation; with 126 files it
+  pushed the `SECTOR: INSHARE` header to line 242, so the field became `null`
+  even though the library was intact. `sync.fuente_volcado` now streams the
+  whole dump (a few MB) and keeps reporting the stable share label; regression
+  test included (`test_fuente_no_depende_del_tamano_de_la_nube_personal`).
+- **The retro pre-flight no longer restores the wrong credential:** when no pool
+  account sees the ROMs in-share, `scripts/verificar_rotacion.py --elegir-cuenta`
+  returns the host to the *preferred* credential, which it reads from
+  `ALUCARD_MEGA_ENV` (`explorar_cuentas_mega.credenciales_preferidas`).
+  `scripts/volcado_retro.sh` exports that variable pointing at the ROMS account
+  (`~/.config/alucard/mega_retro.env`) because its pre-flight needs it, so a
+  FAILED retro pre-flight tried to leave the single MEGAcmd session on the ROMS
+  account (a stale one, for instance: extra failed logins and the host left with
+  no session while the pre-flight aborted) instead of putting it back on Switch,
+  which is the host's priority. The Switch credentials file is now passed
+  explicitly for that run (`ALUCARD_MEGA_ENV="$SWITCH_ENV"`), exactly as
+  `restaurar_sesion_switch` already did, and `--guardar-elegida` keeps persisting
+  the chosen account to `ALUCARD_RETRO_ENV` through `--env-destino`.
 - **Packaged ROM releases no longer end up without an IGDB sheet:**
   `igdb.titulo_para_igdb_rom` (used by `app.enrich --coleccion retro`) stripped
   the dump noise but NOT the package seals of a patched release

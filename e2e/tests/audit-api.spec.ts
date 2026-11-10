@@ -120,7 +120,7 @@ test.describe("API · coherencia de la ingesta", () => {
   test("orden por tamaño: primero INAZUMA ELEVEN Victory Road", async () => {
     const { body } = await apiGet("/api/titles?sort=size&limit=1");
     expect(body.items[0].slug).toBe("inazuma-eleven-victory-road");
-    expect(body.items[0].size_bytes).toBe(185601093061);
+    expect(body.items[0].size_bytes).toBe(216697544096);
   });
 });
 

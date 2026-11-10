@@ -711,13 +711,17 @@ EXIT_VOLCADO_OBSOLETO = 3
 _RE_FECHA_VOLCADO = re.compile(
     r"^\s*Fecha de volcado\s*:\s*(\S+)\s*$", re.IGNORECASE | re.MULTILINE
 )
-# Los bloques SECTOR van al principio del volcado, pero el INSHARE real aparece
-# más abajo (línea ~42): se lee una ventana mayor para localizar la biblioteca.
-# El nombre del compartido puede llevar ESPACIOS (`INSHARE dueño:ORTIK 90`), así
-# que la etiqueta se captura entera hasta el final de la línea.
+# Los bloques SECTOR no están a una altura fija: el CLOUD_DRIVE de la cuenta
+# que volcó (su nube personal, que NO se indexa) crece con la rotación y su
+# árbol puede empujar `SECTOR: INSHARE` más allá de cualquier ventana fija
+# (caso real: 126 archivos de nube → el INSHARE pasó de la línea ~42 a la 242).
+# La etiqueta de la biblioteca es la identidad ESTABLE del catálogo, así que se
+# busca en TODO el volcado (unos MB: coste despreciable) en vez de en la
+# cabecera. El nombre del compartido puede llevar ESPACIOS
+# (`INSHARE dueño:ORTIK 90`), así que la etiqueta se captura entera hasta el
+# final de la línea.
 _RE_SECTOR_INSHARE = re.compile(r"^\s*SECTOR:\s*(INSHARE\s+.+?)\s*$", re.MULTILINE)
 _LINEAS_CABECERA = 40
-_LINEAS_FUENTE = 200
 
 
 def _cabecera(path: Path, lineas: int = _LINEAS_CABECERA) -> str:
@@ -740,8 +744,22 @@ def fuente_volcado(path: Path) -> str | None:
     Las etiquetas `INSHARE <dueño>:<carpeta>` las fija el share montado, no la
     cuenta activa: la rotación semanal de credenciales no cambia de dónde salen
     los datos (solo cambia `account` en la cabecera del volcado).
+
+    Se recorre el volcado COMPLETO: la nube personal de la cuenta que volcó
+    (`CLOUD_DRIVE`, que no se indexa) cambia con la rotación y su árbol puede
+    empujar el bloque `SECTOR: INSHARE` fuera de la cabecera. Buscar solo en las
+    primeras N líneas dejaba `dump_fuente` a null tras una rotación con mucha
+    nube propia.
     """
-    etiquetas = [m.strip() for m in _RE_SECTOR_INSHARE.findall(_cabecera(path, _LINEAS_FUENTE))]
+    etiquetas: list[str] = []
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for linea in fh:
+                m = _RE_SECTOR_INSHARE.match(linea)
+                if m:
+                    etiquetas.append(m.group(1).strip())
+    except OSError:
+        return None
     return ", ".join(etiquetas) if etiquetas else None
 
 

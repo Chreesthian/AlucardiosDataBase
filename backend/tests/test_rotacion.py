@@ -132,6 +132,31 @@ def test_fuente_estable_independiente_de_la_cuenta(tmp_path):
     assert frescura(dos)["fuente"] == SHARE
 
 
+def test_fuente_no_depende_del_tamano_de_la_nube_personal(tmp_path):
+    """La nube personal (no indexada) puede empujar el INSHARE fuera de la cabecera.
+
+    Regresión real de una rotación: el CLOUD_DRIVE de la cuenta pasó a 126
+    archivos/75 carpetas y `SECTOR: INSHARE` saltó de la línea ~42 a la 242.
+    `dump_fuente` debe seguir siendo el share (identidad del catálogo), no null.
+    """
+    nube = (
+        "SECTOR: CLOUD_DRIVE\n"
+        "Archivos  : 250\n"
+        "Carpetas  : 1\n"
+        "Tamano    : 0 bytes (0 B)\n"
+        "\n"
+        "[ROOT] //\n" + "".join(f"|-- [FILE] nube-{i}.bin  (1 bytes)\n" for i in range(250)) + "\n"
+    )
+    p = tmp_path / "volcado.txt"
+    p.write_text(
+        CABECERA.format(cuenta="semana1@example.com") + nube + SECTOR_SHARE,
+        encoding="utf-8",
+    )
+
+    assert fuente_volcado(p) == SHARE
+    assert frescura(p)["fuente"] == SHARE
+
+
 def test_rotacion_de_share_remapa_rutas_y_conserva_igdb(tmp_path, monkeypatch):
     """Cambiar el share montado (BCKP1→BCKP2) NO reconstruye el catálogo."""
     monkeypatch.setattr(sync_mod, "MIN_RUTAS_ALIAS", 5)  # el volcado de muestra es pequeño

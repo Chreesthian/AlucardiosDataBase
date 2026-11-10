@@ -64,6 +64,11 @@ ALUCARD_PY="${ALUCARD_PY:-$ROOT/backend/.venv/bin/python}"
 RETRO_ENV="${ALUCARD_RETRO_ENV:-$HOME/.config/alucard/mega_retro.env}"
 ALUCARD_MEGA_ENV="$RETRO_ENV"
 export ALUCARD_MEGA_ENV
+# Credenciales PREFERIDAS de Switch (mega.env): a ellas debe volver el host al
+# terminar y son las que el pre-vuelo debe restaurar si ninguna cuenta ve la
+# biblioteca. NO se puede usar `ALUCARD_MEGA_ENV` para eso: aquí apunta al fichero
+# de ROMs (línea de arriba), así que se resuelve aparte y se pasa explícitamente.
+SWITCH_ENV="${ALUCARD_SWITCH_ENV:-$MEGA_ENV_POR_DEFECTO}"
 RETRO_OUT="${ALUCARD_RETRO_OUT:-$ROOT/data/mega_retro_contenido_MEGAcmd.txt}"
 LOG_DIR="$ROOT/data"
 LOG="$LOG_DIR/volcado_retro.log"
@@ -148,11 +153,54 @@ quitar_cron() {
   log "cron retro retirado (el cron de Switch queda intacto)"
 }
 
+resumen_cuentas_retro() {
+  # Traduce `$ESTADO_CUENTAS` a lenguaje llano. El pre-vuelo distingue dos fallos
+  # MUY distintos y el operador no debería deducirlos leyendo el JSON entero justo
+  # cuando el cron ya lleva horas fallando:
+  #   · login fallido  → la CREDENCIAL está caducada (rotación semanal): hay que
+  #     actualizar el password de esa cuenta.
+  #   · login OK       → la cuenta no ve el in-share: ya no está invitada a él
+  #     (o falta esa cuenta en el pool).
+  # Nunca falla: sin fichero, sin python3 o con un JSON a medias, no imprime nada.
+  [[ -f "$ESTADO_CUENTAS" ]] || return 0
+  command -v python3 >/dev/null 2>&1 || return 0
+  python3 - "$ESTADO_CUENTAS" <<'PY'
+import json
+import sys
+
+try:
+    d = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception:  # JSON a medio escribir o corrupto: mejor callar que romper
+    sys.exit(0)
+
+cuentas = (d.get("pool") or {}).get("cuentas") or []
+por_email = {c.get("email"): c for c in (d.get("candidatas") or [])}
+etiquetas = ", ".join((d.get("biblioteca") or {}).get("etiquetas") or []) or "el in-share de ROMs"
+montados = ", ".join(d.get("inshares_montados") or []) or "ninguno"
+print(f"pre-vuelo retro: ok={d.get('ok')} · causa={d.get('causa')} · share={etiquetas}")
+if d.get("ok"):
+    print(f"  OK alcanzable con {d.get('cuenta') or d.get('elegida') or '?'}")
+    sys.exit(0)
+for email in cuentas:
+    c = por_email.get(email)
+    if c is None:
+        print(f"  - {email}: no llegó a probarse (el failover paró antes)")
+    elif c.get("login") != "login":
+        print(f"  - {email}: LOGIN FALLIDO -> credencial caducada, actualiza su password")
+    else:
+        print(f"  - {email}: login OK pero NO ve {etiquetas} (monta: {montados})")
+print("  -> login fallido: `make credenciales` / `make retro-credenciales` y su cuenta en el pool")
+print("  -> login OK pero sin el share: esa cuenta ya no está invitada (revisa el pool)")
+PY
+}
+
 mostrar_estado() {
   if [[ -f "$ESTADO" ]]; then cat "$ESTADO"; else echo "(sin estado: aún no se ha ejecutado)"; fi
   echo "── pre-vuelo de rotación retro ($ESTADO_CUENTAS) ──"
   if [[ -f "$ESTADO_CUENTAS" ]]; then
     cat "$ESTADO_CUENTAS"
+    echo "── resumen del pre-vuelo (lenguaje llano) ──"
+    resumen_cuentas_retro || true
   else
     echo "(sin datos: aún no se ha ejecutado el pre-vuelo retro)"
   fi
@@ -172,16 +220,17 @@ restaurar_sesion_switch() {
   #      sesión en la primera cuenta que ve la biblioteca, igual que `make rotacion`.
   # Comprueba el resultado de verdad: no basta con "haberlo intentado". Devuelve
   # 0 solo si la sesión activa vuelve a ser una cuenta de Switch.
-  local preferida actual switch_env="${ALUCARD_SWITCH_ENV:-$MEGA_ENV_POR_DEFECTO}"
+  local preferida actual switch_env="$SWITCH_ENV"
   preferida="$(mega_env_valor "$switch_env" MEGA_EMAIL)"
   actual="$(cuenta_activa_mega)"
   if [[ -n "$preferida" && "${actual,,}" == "${preferida,,}" ]]; then
     log "sesión ya en la credencial preferida ($actual)"
     return 0
   fi
-  # OJO: este script exporta ALUCARD_MEGA_ENV=$RETRO_ENV (lo necesita el pre-vuelo
-  # retro), y el helper de restauración leería ESE fichero (que puede no existir):
-  # se le pasa explícitamente el fichero de SWITCH o no intentaría el login.
+  # OJO: este script exporta ALUCARD_MEGA_ENV=$RETRO_ENV (lo necesitan los
+  # helpers de credenciales del arranque sin volcado previo), y el helper de
+  # restauración leería ESE fichero (que puede no existir): se le pasa
+  # explícitamente el fichero de SWITCH o no intentaría el login.
   (cd "$ROOT" && ALUCARD_MEGA_ENV="$switch_env" "$ALUCARD_PY" - "$MEGA_BIN" <<'PY'
 import pathlib
 import sys
@@ -327,7 +376,16 @@ if [[ -f "$RETRO_OUT" && "${ALUCARD_RETRO_PREFLIGHT:-1}" != "0" ]]; then
     ELEGIR+=(--guardar-elegida --env-destino "$RETRO_ENV")
   fi
   [[ "$QUIET" == "1" ]] && ELEGIR+=(--quiet)
-  if "$ALUCARD_PY" "$ROOT/scripts/verificar_rotacion.py" "${ELEGIR[@]}" >>"$LOG" 2>&1; then
+  # OJO (por qué se pasa ALUCARD_MEGA_ENV explícito): el pre-vuelo, si NINGUNA
+  # cuenta ve la colección, DEVUELVE el host a la credencial preferida, y esa
+  # credencial la lee `explorar_cuentas_mega.credenciales_preferidas()` de
+  # `ALUCARD_MEGA_ENV`. Este script la exporta apuntando al fichero de ROMS (ver
+  # arriba), así que sin este override la restauración intentaría dejar la sesión
+  # en la cuenta de ROMS en vez de devolverla a Switch (prioridad del host: hay UNA
+  # sola sesión MEGAcmd). Mismo motivo que en `restaurar_sesion_switch`; el volcado
+  # elegido se sigue persistiendo en `$RETRO_ENV` vía `--env-destino`.
+  if ALUCARD_MEGA_ENV="$SWITCH_ENV" "$ALUCARD_PY" "$ROOT/scripts/verificar_rotacion.py" \
+      "${ELEGIR[@]}" >>"$LOG" 2>&1; then
     log "colección de ROMs alcanzable con la sesión $(cuenta_activa_mega) (failover por pool si hizo falta)"
   else
     rc=$?
@@ -337,6 +395,13 @@ if [[ -f "$RETRO_OUT" && "${ALUCARD_RETRO_PREFLIGHT:-1}" != "0" ]]; then
       log "AVISO: $mensaje (dry-run: se continúa sin escribir el volcado)"
     else
       log "ERROR: $mensaje"
+      # El correo del cron y el log deben explicar POR QUÉ (credencial caducada vs.
+      # cuenta sin acceso al share), no solo que no se ve la colección.
+      resumen="$(resumen_cuentas_retro)"
+      if [[ -n "$resumen" ]]; then
+        while IFS= read -r linea_resumen; do log "$linea_resumen"; done <<<"$resumen"
+        corta "$resumen"
+      fi
       corta "volcado_retro: $mensaje → el volcado retro y su BD NO se tocan"
       escribir_estado "$rc" "$mensaje" "$INICIO" "$(date -Is)"
       exit "$rc"
