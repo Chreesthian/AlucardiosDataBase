@@ -1,12 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Alucardio DataBase">
-<rect width="512" height="512" rx="96" fill="#111314"/>
-<g stroke="#f8ed43" stroke-linecap="butt">
-  <path d="M150 430 256 76" stroke-width="54"/>
-  <path d="M362 430 256 76" stroke-width="54"/>
-  <path d="M198 306h116" stroke-width="46"/>
-</g>
-<circle cx="404" cy="108" r="26" fill="#ff4060"/>
-<g stroke="#f8ed43" stroke-width="5" opacity=".55">
-  <path d="M96 448h320M96 466h320M96 484h320"/>
-</g>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Alucardio DataBase">
+  <title>Alucardio DataBase</title>
+  <rect width="512" height="512" rx="112" fill="#111314"/>
+  <g transform="translate(36.0 36.0) scale(0.86000)" fill="none" stroke-linecap="butt" stroke-linejoin="miter">
+    <path d="M128 128 204 204M204 128 128 204" stroke="#7bb0e4" stroke-width="24"/>
+    <rect x="298" y="118" width="96" height="96" stroke="#fb68f6" stroke-width="24"/>
+    <circle cx="166" cy="346" r="48" stroke="#fe6466" stroke-width="24"/>
+    <path d="M346 292 286 410h120Z" stroke="#3ee19e" stroke-width="24"/>
+  </g>
 </svg>

@@ -27,7 +27,18 @@ test("home: SSR renderiza la biblioteca con métricas reales", async ({ page }) 
   await expect(
     page.getByRole("heading", { name: /La biblioteca de Alucardio/i }),
   ).toBeVisible();
-  await expect(page.locator(".site-top__brand")).toContainText("Alucardio");
+  await expect(page.locator(".site-top__brand")).toHaveAttribute(
+    "aria-label",
+    /Alucardio/,
+  );
+  await expect(page.locator(".site-top__logo")).toBeVisible();
+  await expect
+    .poll(() =>
+      page
+        .locator(".site-top__logo")
+        .evaluate((el) => getComputedStyle(el).backgroundImage),
+    )
+    .toContain("/brand/logo.svg");
 
   // Métricas del snapshot (vía SSR) presentes en la cabecera.
   await expect(page.getByText("juegos").first()).toBeVisible();

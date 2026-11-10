@@ -468,17 +468,25 @@ img {
   min-height: 44px;
 }
 
-.site-top__brand img,
-.site-top__mark {
-  width: 22px;
-  height: 22px;
-  object-fit: contain;
-  filter: drop-shadow(0 0 10px color-mix(in oklab, var(--brand) 45%, transparent));
+.site-top__logo {
+  display: inline-block;
+  flex: none;
+  width: 120px;
+  height: 42px;
+  background: url("/brand/logo.svg") center / contain no-repeat;
+  filter: drop-shadow(0 0 10px color-mix(in oklab, var(--brand) 28%, transparent));
 }
 
-.site-top__mark {
-  display: inline-block;
-  background: url("/brand/emblem.svg") center / contain no-repeat;
+:root[data-ink="day"] .site-top__logo,
+:root[data-ink="morning"] .site-top__logo {
+  background-image: url("/brand/logo-on-light.svg");
+}
+
+@media (max-width: 480px) {
+  .site-top__logo {
+    width: 104px;
+    height: 37px;
+  }
 }
 
 .site-top__nav {
