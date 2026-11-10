@@ -163,19 +163,50 @@ def evaluar(esperado: dict, montados: set[str] | list[str], listados: dict[str, 
     de la raíz} de las rutas que se han podido listar. Sin biblioteca canónica
     (volcado de arranque o sin in-shares) no hay nada que verificar y no se bloquea.
     """
-    vistos = {str(p).lower() for p in montados}
-    faltan_rutas = [r for r in esperado["rutas"] if r.lower() not in vistos]
+    esperadas = {r.lower() for r in esperado["rutas"]}
+    candidatas = sorted(p for p in montados if str(p).lower() not in esperadas)
+    faltan_rutas: list[str] = []
     faltan_buckets: dict[str, list[str]] = {}
+    rotados: list[list[str]] = []
+    usadas: set[str] = set()
     for ruta, etiqueta in zip(esperado["rutas"], esperado["etiquetas"], strict=True):
         nombres = listados.get(ruta)
-        if nombres is None:
-            continue  # no montado: ya lo reporta `faltan_rutas`
-        vistos_raiz = {_normalizar(n).lower() for n in nombres}
-        ausentes = [
-            b for b in esperado["buckets"].get(etiqueta, []) if b.lower() not in vistos_raiz
-        ]
-        if ausentes:
-            faltan_buckets[ruta] = ausentes
+        if nombres is not None:
+            vistos_raiz = {_normalizar(n).lower() for n in nombres}
+            ausentes = [
+                b
+                for b in esperado["buckets"].get(etiqueta, [])
+                if b.lower() not in vistos_raiz
+            ]
+            if ausentes:
+                faltan_buckets[ruta] = ausentes
+            continue
+
+        # La ruta exacta no está montada. Las credenciales semanales a veces
+        # montan LA MISMA biblioteca bajo otra etiqueta (`BCKP1` → `BCKP2`):
+        # se acepta un share alternativo solo si su raíz conserva TODOS los
+        # buckets. El contenido completo (títulos/archivos) lo valida después
+        # `refrescar_volcado.py`, que aborta sin escribir si no es la misma.
+        esperados = {b.lower() for b in esperado["buckets"].get(etiqueta, [])}
+        elegida = None
+        if esperados:
+            for candidata in candidatas:
+                if candidata.lower() in usadas:
+                    continue
+                nombres_candidata = listados.get(candidata)
+                if nombres_candidata is None:
+                    continue
+                vistos_candidata = {
+                    _normalizar(n).lower() for n in nombres_candidata
+                }
+                if esperados <= vistos_candidata:
+                    elegida = candidata
+                    break
+        if elegida is None:
+            faltan_rutas.append(ruta)
+            continue
+        usadas.add(elegida.lower())
+        rotados.append([ruta, elegida])
 
     if not esperado["rutas"]:
         return {
@@ -183,6 +214,7 @@ def evaluar(esperado: dict, montados: set[str] | list[str], listados: dict[str, 
             "causa": "sin_biblioteca_canonica",
             "faltan_rutas": [],
             "faltan_buckets": {},
+            "rotados": [],
             "veredicto": "el volcado vigente no declara in-shares con archivos; nada que verificar",
         }
 
@@ -192,6 +224,7 @@ def evaluar(esperado: dict, montados: set[str] | list[str], listados: dict[str, 
             "causa": "inshare_ausente",
             "faltan_rutas": faltan_rutas,
             "faltan_buckets": faltan_buckets,
+            "rotados": rotados,
             "veredicto": "la sesión de MEGAcmd NO monta el in-share de la biblioteca: "
             + ", ".join(faltan_rutas)
             + " (¿credenciales de otra cuenta u otro share?)",
@@ -204,9 +237,22 @@ def evaluar(esperado: dict, montados: set[str] | list[str], listados: dict[str, 
             "causa": "buckets_ausentes",
             "faltan_rutas": [],
             "faltan_buckets": faltan_buckets,
+            "rotados": rotados,
             "veredicto": f"la raíz de {ruta} no muestra {len(ausentes)} bucket(s) conocidos "
             f"(p. ej. {', '.join(ausentes[:5])}): share re-compartido incompleto o "
             "volcado del share equivocado",
+        }
+
+    if rotados:
+        pares = ", ".join(f"{viejo} → {nuevo}" for viejo, nuevo in rotados)
+        return {
+            "ok": True,
+            "causa": "share_rotado",
+            "faltan_rutas": [],
+            "faltan_buckets": {},
+            "rotados": rotados,
+            "veredicto": "la sesión monta la biblioteca con otra etiqueta de share "
+            f"({pares}); se validará el contenido completo al refrescar",
         }
 
     return {
@@ -214,6 +260,7 @@ def evaluar(esperado: dict, montados: set[str] | list[str], listados: dict[str, 
         "causa": None,
         "faltan_rutas": [],
         "faltan_buckets": {},
+        "rotados": [],
         "veredicto": f"la sesión ve la biblioteca del volcado "
         f"({', '.join(esperado['etiquetas'])}): {esperado['files']} archivos, "
         f"{esperado['titulos']} títulos",
@@ -228,9 +275,12 @@ def medir(mega_bin: Path, esperado: dict, *, timeout: int = T_LISTADO) -> dict:
     """
     cuenta = ex.cuenta_activa(mega_bin)
     montados = {m["ruta"] for m in ex.montajes(mega_bin) if m["tipo"].upper() == "INSHARE"}
+    montados_lower = {m.lower() for m in montados}
+    esperadas = {r.lower() for r in esperado["rutas"]}
+    candidatas = {r for r in montados if r.lower() not in esperadas}
     listados: dict[str, list[str]] = {}
-    for ruta in esperado["rutas"]:
-        if ruta.lower() not in {m.lower() for m in montados}:
+    for ruta in sorted(set(esperado["rutas"]) | candidatas):
+        if ruta.lower() not in montados_lower:
             continue  # sin montar: ya lo reporta el veredicto
         rc, salida = ex._mega(["mega-ls", ruta], mega_bin, timeout)
         if rc == 0:
@@ -280,6 +330,8 @@ def informe_de(
         "faltan_rutas": veredicto["faltan_rutas"],
         "faltan_buckets": veredicto["faltan_buckets"],
     }
+    if veredicto.get("rotados"):
+        informe["rotados"] = veredicto["rotados"]
     if not medicion["cuenta"]:
         # Sin sesión utilizable el veredicto sería "falta el in-share" y despistaría
         # al operador: se dice lo que pasa (y el autovolcado ya sale con rc=4).

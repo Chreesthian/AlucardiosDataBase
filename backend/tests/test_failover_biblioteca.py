@@ -465,3 +465,60 @@ def test_main_con_failover_publica_el_fallo_y_sale_ocho(tmp_path, monkeypatch, c
     cuerpo = json.loads(estado.read_text(encoding="utf-8"))
     assert cuerpo["ok"] is False and cuerpo["faltan_rutas"] == [RUTA]
     assert "ninguna cuenta del pool ve la biblioteca" in capsys.readouterr().out
+
+
+def test_preflight_acepta_el_mismo_share_con_otra_etiqueta():
+    """Rotación de share: BCKP2 desaparece y BCKP3 trae los mismos buckets."""
+    esperado = pre.esperado_del_volcado(CABECERA + SECTOR_SHARE)
+    ruta_nueva = "//from/biblioteca.demo@gmail.com:BCKP3"
+
+    veredicto = pre.evaluar(
+        esperado,
+        {ruta_nueva},
+        {ruta_nueva: BUCKETS},
+    )
+
+    assert veredicto["ok"] is True
+    assert veredicto["causa"] == "share_rotado"
+    assert veredicto["rotados"] == [[RUTA, ruta_nueva]]
+    assert veredicto["faltan_rutas"] == []
+    assert "otra etiqueta de share" in veredicto["veredicto"]
+
+
+def test_preflight_no_acepta_un_share_alternativo_incompleto():
+    esperado = pre.esperado_del_volcado(CABECERA + SECTOR_SHARE)
+    ruta_nueva = "//from/biblioteca.demo@gmail.com:BCKP3"
+
+    veredicto = pre.evaluar(
+        esperado,
+        {ruta_nueva},
+        {ruta_nueva: ["-- A"]},
+    )
+
+    assert veredicto["ok"] is False
+    assert veredicto["faltan_rutas"] == [RUTA]
+    assert veredicto["rotados"] == []
+
+
+def test_elegir_cuenta_acepta_la_sesion_con_share_rotado(tmp_path, monkeypatch):
+    """La misma biblioteca con otra etiqueta no dispara logins ni rc=8."""
+    ruta_nueva = "//from/biblioteca.demo@gmail.com:BCKP3"
+    estado = _sesion(monkeypatch, PREFERIDA, {PREFERIDA: {ruta_nueva: BUCKETS}})
+    pool = _pool(tmp_path, [(BUENA, "clave-buena")])
+    llamadas: list = []
+
+    informe = pre.elegir_del_pool(
+        _bin(tmp_path),
+        _volcado(tmp_path),
+        cuentas_path=pool,
+        iniciar=_login(estado),
+        restaurar=_restaurador(estado, llamadas),
+    )
+
+    assert informe["ok"] is True
+    assert informe["causa"] == "share_rotado"
+    assert informe["origen"] == "sesion_activa"
+    assert informe["rotados"] == [[RUTA, ruta_nueva]]
+    assert informe["candidatas"] == []
+    assert llamadas == []
+    assert estado["cuenta"] == PREFERIDA

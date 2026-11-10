@@ -151,7 +151,11 @@ make credenciales     # stores this week's MEGA_EMAIL/MEGA_PASSWORD (chmod 600)
   holds the same buckets. If this week's credentials mount a *different* library
   it aborts with **rc=8** without spending minutes on `mega-ls -R -l` and without
   touching the dump; the verdict is written atomically to
-  `data/estado_cuentas.json`. `ALUCARD_PREFLIGHT=0` disables it.
+  `data/estado_cuentas.json`. `ALUCARD_PREFLIGHT=0` disables it. If the exact
+  in-share label is gone but another mounted share keeps **all the known
+  buckets**, the pre-flight treats it as a renamed share; the full path/title
+  guards in `refrescar_volcado.py` remain the authority before anything is
+  written.
   `GET /api/sync/cuentas` publishes that verdict (verdict, rotating account, age,
   what is missing) and `/novedades` warns when this week's credentials mount a
   *different* library, so a frozen catalog is visible instead of silent. In

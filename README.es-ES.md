@@ -155,7 +155,10 @@ make credenciales     # guarda MEGA_EMAIL/MEGA_PASSWORD de la semana (chmod 600)
   **rc=8** sin gastar minutos en `mega-ls -R -l` ni tocar el volcado. El veredicto
   se escribe en `data/estado_cuentas.json` (`ALUCARD_PREFLIGHT=0` lo desactiva) y
   lo publica `GET /api/sync/cuentas`, que es lo que usa `/novedades` para avisar
-  cuando la cuenta de la semana no ve la biblioteca.
+  cuando la cuenta de la semana no ve la biblioteca. Si desaparece la etiqueta
+  exacta pero otro share montado conserva **todos los buckets conocidos**, el
+  pre-vuelo lo trata como un share renombrado; los guards completos de rutas y
+  títulos de `refrescar_volcado.py` siguen siendo la autoridad antes de escribir.
 - **Failover guiado por la biblioteca (`make rotacion`)**: entrar en MEGA y *ver*
   la biblioteca son cosas distintas — una cuenta del pool puede entrar y montar
   otro share, así que quien decide es el pre-vuelo. Cuando la credencial de la
