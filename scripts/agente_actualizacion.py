@@ -134,19 +134,25 @@ def main() -> int:
     uds_path.parent.mkdir(parents=True, exist_ok=True)
     with suppress(FileNotFoundError):
         uds_path.unlink()
-    # El socket lo lee el contenedor (otro uid): 0666, protegido por el token.
-    os.umask(0o111)
+
+    app = crear_app(cfg, sync_url=args.sync_url, token=token)
+    config = uvicorn.Config(app, uds=str(uds_path), log_level="info")
+    # El umask solo se aplica al crear el socket (0666 para el contenedor); si
+    # se dejara puesto, los scripts hijos crearían /tmp sin permiso de ejecución.
+    umask_previo = os.umask(0o111)
+    try:
+        socket_servidor = config.bind_socket()
+    finally:
+        os.umask(umask_previo)
+    with suppress(OSError):
+        uds_path.chmod(0o666)
 
     print(
         f"agente de actualización en unix:{uds_path} "
         f"(token: {token_path}; API: {args.sync_url})",
         flush=True,
     )
-    uvicorn.run(
-        crear_app(cfg, sync_url=args.sync_url, token=token),
-        uds=str(uds_path),
-        log_level="info",
-    )
+    uvicorn.Server(config).run(sockets=[socket_servidor])
     return 0
 
 

@@ -468,6 +468,18 @@ def test_remote_service_delega_en_el_agente_sin_guardar_en_local(tmp_path):
         hilo.join(timeout=2)
 
 
+def test_motivo_refresco_distingue_permisos_de_contenido():
+    runner = HostMegaRunner(Settings(), None)
+    permiso = runner._motivo_refresco(
+        "PermissionError: [Errno 13] Permission denied: '/tmp/x/CLOUD_DRIVE.txt'"
+    )
+    contenido = runner._motivo_refresco(
+        "✖ el candidato NO trae estos sectores de la biblioteca"
+    )
+    assert "permisos" in permiso
+    assert "no conserva la biblioteca" in contenido
+
+
 def test_remote_service_sin_agente_devuelve_aviso(tmp_path):
     token = tmp_path / "agente.token"
     token.write_text("t" * 32, encoding="utf-8")

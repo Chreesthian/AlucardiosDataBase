@@ -398,7 +398,7 @@ class HostMegaRunner:
         cwd: Path,
         etiqueta: str,
         secrets: list[str],
-    ) -> int:
+    ) -> tuple[int, str, str]:
         self._log(f"── {etiqueta} ──", secrets=secrets)
         try:
             proc = subprocess.run(  # noqa: S603 - comandos construidos con rutas resueltas
@@ -419,9 +419,30 @@ class HostMegaRunner:
             raise MegaUpdateFailed(
                 f"{etiqueta}: no se pudo ejecutar el proceso de actualización."
             ) from exc
-        self._log(proc.stdout or "", secrets=secrets)
-        self._log(proc.stderr or "", secrets=secrets)
-        return proc.returncode
+        salida = proc.stdout or ""
+        errores = proc.stderr or ""
+        self._log(salida, secrets=secrets)
+        self._log(errores, secrets=secrets)
+        return proc.returncode, salida, errores
+
+    @staticmethod
+    def _motivo_refresco(salida: str) -> str:
+        """Traduce el fallo del volcado sin volcar rutas ni credenciales a la UI."""
+        texto = salida.lower()
+        if "permissionerror" in texto or "permission denied" in texto:
+            return (
+                "No se pudo escribir el volcado temporal por un problema de "
+                "permisos. La base de datos no se ha modificado."
+            )
+        if "no trae estos sectores" in texto or "cobertura" in texto:
+            return (
+                "El volcado nuevo no conserva la biblioteca. No se ha modificado "
+                "la base de datos."
+            )
+        return (
+            "No se pudo completar el volcado. La base de datos no se ha "
+            "modificado. Revisa el registro local."
+        )
 
 
     def run(self, *, progress: Progreso, secrets: list[str]) -> dict:
@@ -453,7 +474,7 @@ class HostMegaRunner:
             str(self.cfg.resolved_mega_env),
             "--quiet",
         ]
-        rc = self._run(
+        rc, _salida, _errores = self._run(
             preflight,
             env=env,
             cwd=root,
@@ -490,7 +511,7 @@ class HostMegaRunner:
             "--min-titulos-fraccion",
             str(self.cfg.sync_min_titulos_fraccion),
         ]
-        rc = self._run(
+        rc, salida, errores = self._run(
             refresco,
             env=env,
             cwd=root,
@@ -498,10 +519,7 @@ class HostMegaRunner:
             secrets=secrets,
         )
         if rc != 0:
-            raise MegaUpdateFailed(
-                "El volcado nuevo no conserva la biblioteca. No se ha modificado "
-                "la base de datos."
-            )
+            raise MegaUpdateFailed(self._motivo_refresco(f"{salida}\n{errores}"))
 
         progress("sincronizando", "Aplicando los cambios a la base de datos…")
         if self.engine is not None:
