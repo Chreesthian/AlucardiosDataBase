@@ -32,10 +32,34 @@ Alucardio brand, installable as a PWA.
 - **Separate retro catalog.** A second MEGA in-share with ROMs (arcade, consoles,
   microcomputers) is indexed into its **own database** and served at `/retro` with
   its own API, so it never mixes with the Switch library.
-- **Frontend.** SSR cover grid with search, letter chips, ordering and
-  pagination; a rich game detail page; offline-ready PWA.
+- **Frontend.** SSR catalog with a typographic list and a 2:3 cover grid,
+  search, letter chips, ordering and pagination; a rich game detail page;
+  offline-ready PWA.
 - **Operational.** Docker Compose stack with supervised workers, atomic JSON
   exports and structured endpoints for the web.
+
+## Frontend experience
+
+The catalog is a self-hosted library, not a game launcher: it never starts
+emulators or ROMs. Its interface borrows the focus rhythm of a console home
+screen while keeping the editorial Alucardio identity.
+
+- **List and grid.** The list is the default typographic view; the grid keeps
+  IGDB covers at their native 2:3 ratio. Both share the same search, letter
+  filters, ordering and pagination.
+- **Visible selection.** In the grid, hover, keyboard focus and the active card
+  show a theme-aware CSS ring around the cover. The ring is decorative: the
+  project's `:focus-visible` outline remains visible for keyboard users. In the
+  list, the active row uses a compact vertical accent bar instead of a box.
+- **Motion with a fallback.** Cards lift 4 px and scale 1.015 on selection
+  without affecting layout. `prefers-reduced-motion` removes the movement and
+  ring animation, and browsers without `mask-composite` fall back to an
+  outline.
+- **No bundled console art.** The effect uses only the four accent tokens of
+  the active theme and CSS; the repository ships no console assets.
+
+The UI audit lives in `e2e/tests/audit-ui.spec.ts` and runs with `make e2e`
+against a live deployment.
 
 ## Architecture
 

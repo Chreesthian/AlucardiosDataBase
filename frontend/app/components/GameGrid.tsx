@@ -27,6 +27,7 @@ export function GameGrid({ items }: { items: GameViewItem[] }) {
           meta={item.gridMeta}
           titleAttr={item.titleAttr}
           share={picked === item.key}
+          selected={picked === item.key}
           onPointerDown={() => flushSync(() => setPicked(item.key))}
           onFocus={() => setPicked(item.key)}
         />

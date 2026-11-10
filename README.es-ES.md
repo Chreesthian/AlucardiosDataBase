@@ -34,10 +34,35 @@ Alucardio, instalable como PWA.
 - **Colección retro aparte.** Un segundo in-share de MEGA con ROMs (arcade,
   consolas, micros) se indexa en **su propia base de datos** y se sirve en
   `/retro` con su propia API, sin mezclarse nunca con la biblioteca de Switch.
-- **Frontend.** Rejilla SSR con búsqueda, chips por letra, ordenación y
-  paginación; página de detalle enriquecida; PWA instalable y offline.
+- **Frontend.** Catálogo SSR con lista tipográfica y cuadrícula de carátulas
+  2:3, búsqueda, chips por letra, ordenación y paginación; página de detalle
+  enriquecida; PWA instalable y offline.
 - **Operativa.** Stack Docker Compose con workers supervisados, exportaciones
   JSON atómicas y endpoints estructurados para la web.
+
+## Experiencia de interfaz
+
+El catálogo es una biblioteca autohospedada, no un lanzador: nunca arranca
+emuladores ni ROMs. La interfaz toma el ritmo de foco de un menú de consola y
+mantiene la identidad editorial de Alucardio.
+
+- **Lista y cuadrícula.** La lista es la vista tipográfica por defecto; la
+  cuadrícula conserva las carátulas de IGDB en su proporción nativa 2:3. Ambas
+  comparten búsqueda, filtros por letra, ordenación y paginación.
+- **Selección visible.** En la cuadrícula, al pasar el puntero, con el foco de
+  teclado y en la tarjeta activa se muestra un anillo CSS que cambia con la
+  tinta. El anillo es decorativo: el contorno `:focus-visible` del proyecto
+  sigue visible para teclado. En la lista, la fila activa usa una barra
+  vertical de acento, no un marco.
+- **Movimiento con respaldo.** Al seleccionar, la tarjeta se eleva 4 px y
+  escala 1.015 sin mover el layout. `prefers-reduced-motion` elimina el
+  movimiento y la animación del anillo; los navegadores sin `mask-composite`
+  usan un contorno de respaldo.
+- **Sin recursos gráficos de consola.** El efecto usa solo los cuatro acentos
+  de la tinta activa y CSS; el repositorio no distribuye recursos de consola.
+
+La auditoría de UI vive en `e2e/tests/audit-ui.spec.ts` y se ejecuta con
+`make e2e` contra un despliegue vivo.
 
 ## Arquitectura
 

@@ -10,6 +10,7 @@ export function CoverCard({
   meta,
   titleAttr,
   share = false,
+  selected = false,
   onPointerDown,
   onFocus,
 }: {
@@ -20,6 +21,7 @@ export function CoverCard({
   meta?: string | null;
   titleAttr?: string | null;
   share?: boolean;
+  selected?: boolean;
   onPointerDown?: () => void;
   onFocus?: () => void;
 }) {
@@ -28,31 +30,34 @@ export function CoverCard({
       to={href}
       className="cover-card"
       title={titleAttr ?? name}
+      data-selected={selected ? "true" : undefined}
       data-cursor
       data-cursor-label="Abrir ficha"
       viewTransition
       onPointerDown={onPointerDown}
       onFocus={onFocus}
     >
-      <div
-        className="cover-card__art"
-        style={share ? { viewTransitionName: "game-cover" } : undefined}
-      >
-        {badge ? <span className="cover-card__badge">{badge}</span> : null}
-        <span className="cover-card__fallback" aria-hidden="true">
-          {initials(name)}
-        </span>
-        {cover ? (
-          <img
-            src={coverUrl(cover, "grid") ?? cover}
-            alt={name}
-            loading="lazy"
-            decoding="async"
-            onError={(event) => {
-              (event.currentTarget as HTMLImageElement).style.display = "none";
-            }}
-          />
-        ) : null}
+      <div className="cover-card__frame">
+        <div
+          className="cover-card__art"
+          style={share ? { viewTransitionName: "game-cover" } : undefined}
+        >
+          {badge ? <span className="cover-card__badge">{badge}</span> : null}
+          <span className="cover-card__fallback" aria-hidden="true">
+            {initials(name)}
+          </span>
+          {cover ? (
+            <img
+              src={coverUrl(cover, "grid") ?? cover}
+              alt={name}
+              loading="lazy"
+              decoding="async"
+              onError={(event) => {
+                (event.currentTarget as HTMLImageElement).style.display = "none";
+              }}
+            />
+          ) : null}
+        </div>
       </div>
       <div
         className="cover-card__title"

@@ -221,3 +221,48 @@ test("toggle lista/cuadrícula coherente en Biblioteca, Retro y Novedades", asyn
     await expect(page.locator(".work-list").first()).toBeVisible();
   }
 });
+
+test("selección de carátula: anillo, radio 2:3 y barra de lista", async ({ page }) => {
+  await page.goto("/?vista=cuadricula");
+  const card = page.locator(".cover-card").first();
+  await card.scrollIntoViewIfNeeded();
+
+  const geometry = await card.evaluate((element) => {
+    const art = element.querySelector(".cover-card__art")!;
+    const rect = art.getBoundingClientRect();
+    return {
+      radius: getComputedStyle(art).borderRadius,
+      ratio: rect.height / rect.width,
+    };
+  });
+  expect(geometry.radius).toBe("16px");
+  expect(geometry.ratio).toBeCloseTo(1.5, 2);
+
+  await card.hover();
+  await expect
+    .poll(() =>
+      card.evaluate((element) =>
+        getComputedStyle(element.querySelector(".cover-card__frame")!, "::before").opacity,
+      ),
+    )
+    .toBe("1");
+
+  // El foco de teclado conserva el outline global y activa el estado visual.
+  await page.mouse.move(0, 0);
+  await card.focus();
+  await expect(card).toBeFocused();
+  expect(await card.evaluate((element) => element.matches(":focus-visible"))).toBe(true);
+  expect(
+    await card.evaluate((element) => getComputedStyle(element).outlineStyle),
+  ).toBe("solid");
+  expect(await card.getAttribute("data-selected")).toBe("true");
+
+  await page.goto("/");
+  const row = page.locator(".work-row").first();
+  await row.scrollIntoViewIfNeeded();
+  await expect
+    .poll(() =>
+      row.evaluate((element) => getComputedStyle(element, "::before").opacity),
+    )
+    .toBe("1");
+});
