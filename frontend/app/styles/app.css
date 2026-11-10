@@ -558,25 +558,35 @@ img {
 
 .hero__wordmark {
   width: 100%;
-  max-width: min(100%, calc((100svh - 13rem) * 1.62));
+  max-width: min(100%, 1600px, calc((100svh - 13rem) * 2.8333));
   margin-inline: auto;
   margin-block: auto;
   padding-inline: var(--space-inline);
   color: var(--text-mark);
+  perspective: 1400px;
 }
 
-.wordmark-svg {
+.hero-logo {
   display: block;
   width: 100%;
-  height: auto;
-  overflow: visible;
+  aspect-ratio: 170 / 60;
+  background: url("/brand/logo.svg") center / contain no-repeat;
+  transform: translate3d(var(--logo-x, 0px), var(--logo-y, 0px), 0)
+    rotateX(var(--logo-rx, 0deg)) rotateY(var(--logo-ry, 0deg));
+  transform-origin: 50% 50%;
+  will-change: transform;
+  pointer-events: none;
 }
 
-.wordmark-svg text {
-  font-family: var(--font-display);
-  font-weight: 800;
-  fill: currentColor;
-  letter-spacing: -0.055em;
+:root[data-ink="day"] .hero-logo,
+:root[data-ink="morning"] .hero-logo {
+  background-image: url("/brand/logo-on-light.svg");
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-logo {
+    transform: none;
+  }
 }
 
 .hero__wordmark-inner {
@@ -595,6 +605,12 @@ img {
     opacity: 1;
     transform: none;
     filter: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero__wordmark-inner {
+    animation: none;
   }
 }
 

@@ -4,7 +4,7 @@
  *  - Estáticos hasheados (/icons, /brand, /assets/*) → caché primero.
  * Al desplegar una versión nueva se cambia el nombre de caché (bump abajo).
  */
-const CACHE = "alucard-v6";
+const CACHE = "alucard-v7";
 const PRECACHE = [
   "/manifest.webmanifest",
   "/favicon.svg",

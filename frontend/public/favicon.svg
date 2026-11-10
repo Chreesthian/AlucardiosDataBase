@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Alucardio DataBase">
-  <title>Alucardio DataBase</title>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="La Biblioteca de Alucardio">
+  <title>La Biblioteca de Alucardio</title>
   <rect width="512" height="512" rx="112" fill="#111314"/>
   <g transform="translate(36.0 36.0) scale(0.86000)" fill="none" stroke-linecap="butt" stroke-linejoin="miter">
     <path d="M128 128 204 204M204 128 128 204" stroke="#7bb0e4" stroke-width="24"/>

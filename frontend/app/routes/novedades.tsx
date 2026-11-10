@@ -10,7 +10,7 @@ import { eventItem, parseView, VIEW_PARAM } from "~/lib/game-view";
 import { edadLegible, formatNumber } from "~/lib/format";
 
 export const meta: MetaFunction = () => [
-  { title: "Novedades — Alucardio DataBase" },
+  { title: "Novedades — La Biblioteca de Alucardio" },
   {
     name: "description",
     content:

@@ -1,15 +1,15 @@
 import type { ReactNode } from "react";
 
 /**
- * Hero del catálogo: wordmark a sangre, blobs residentes y una línea discreta
+ * Hero del catálogo: logotipo a sangre, blobs residentes y una línea discreta
  * con el recuento real. Se han retirado la cabecera mono (Switch · MEGA /
  * 2026), la tagline, la píldora y las métricas de almacenamiento.
  */
 export function Hero({
-  wordmark,
+  logo,
   meta,
 }: {
-  wordmark: ReactNode;
+  logo: ReactNode;
   meta?: ReactNode;
 }) {
   return (
@@ -17,7 +17,7 @@ export function Hero({
       {meta ? <div className="hero__counts">{meta}</div> : null}
       <div className="hero__body">
         <div className="hero__wordmark">
-          <div className="hero__wordmark-inner">{wordmark}</div>
+          <div className="hero__wordmark-inner">{logo}</div>
         </div>
         <span
           className="resident"

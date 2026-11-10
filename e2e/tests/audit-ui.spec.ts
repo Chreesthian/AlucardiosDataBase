@@ -23,7 +23,7 @@ const CARDS = 'main a[href^="/game/"][title]';
 test("home: SSR renderiza la biblioteca con métricas reales", async ({ page }) => {
   const errors = watchErrors(page);
   await page.goto("/");
-  await expect(page).toHaveTitle(/La biblioteca de Alucardio/);
+  await expect(page).toHaveTitle(/La Biblioteca de Alucardio/);
   await expect(
     page.getByRole("heading", { name: /La biblioteca de Alucardio/i }),
   ).toBeVisible();
@@ -36,6 +36,14 @@ test("home: SSR renderiza la biblioteca con métricas reales", async ({ page }) 
     .poll(() =>
       page
         .locator(".site-top__logo")
+        .evaluate((el) => getComputedStyle(el).backgroundImage),
+    )
+    .toContain("/brand/logo.svg");
+  await expect(page.locator(".hero-logo")).toBeVisible();
+  await expect
+    .poll(() =>
+      page
+        .locator(".hero-logo")
         .evaluate((el) => getComputedStyle(el).backgroundImage),
     )
     .toContain("/brand/logo.svg");
@@ -56,6 +64,24 @@ test("home: SSR renderiza la biblioteca con métricas reales", async ({ page }) 
   ensureResultsDir();
   await page.screenshot({ path: "results/home.png", fullPage: false });
   expect(errors).toEqual([]);
+});
+
+test("el logo del hero responde al puntero con un desplazamiento suave", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.goto("/");
+  const logo = page.locator(".hero-logo");
+  await expect(logo).toBeVisible();
+
+  await page.mouse.move(1200, 180);
+  await expect
+    .poll(async () =>
+      parseFloat(
+        await logo.evaluate((el) =>
+          getComputedStyle(el).getPropertyValue("--logo-x"),
+        ),
+      ),
+    )
+    .toBeGreaterThan(0);
 });
 
 test("buscador autosuggest resuelve y navega al detalle", async ({ page }) => {

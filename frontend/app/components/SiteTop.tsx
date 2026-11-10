@@ -6,7 +6,7 @@ import { Link } from "react-router";
 export function SiteTop() {
   return (
     <header className="site-top" role="banner">
-      <Link to="/" className="site-top__brand" aria-label="Alucardio DataBase — inicio">
+      <Link to="/" className="site-top__brand" aria-label="La Biblioteca de Alucardio — inicio">
         <span className="site-top__logo" aria-hidden="true" />
       </Link>
       <span className="site-top__now">Biblioteca</span>

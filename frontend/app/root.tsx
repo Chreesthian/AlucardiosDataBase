@@ -29,15 +29,17 @@ export const links: LinksFunction = () => [
 ];
 
 export const meta: MetaFunction = () => [
-  { title: "La biblioteca de Alucardio — Alucardio DataBase" },
+  { title: "La Biblioteca de Alucardio" },
   {
     name: "description",
     content:
       "Catálogo navegable de la biblioteca de juegos de Switch en MEGA, con portadas y fichas de IGDB.",
   },
   { name: "theme-color", content: "#111314" },
+  { name: "apple-mobile-web-app-title", content: "La Biblioteca de Alucardio" },
   { property: "og:type", content: "website" },
-  { property: "og:title", content: "La biblioteca de Alucardio — Alucardio DataBase" },
+  { property: "og:title", content: "La Biblioteca de Alucardio" },
+  { property: "og:site_name", content: "La Biblioteca de Alucardio" },
   {
     property: "og:description",
     content: "Todo lo que vive en tu cuenta MEGA, en un solo sitio.",

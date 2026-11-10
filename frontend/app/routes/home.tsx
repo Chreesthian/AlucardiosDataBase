@@ -5,11 +5,11 @@ import { BandEdge } from "~/components/BandEdge";
 import { GameGrid } from "~/components/GameGrid";
 import { GameRows } from "~/components/GameRows";
 import { Hero } from "~/components/Hero";
+import { HeroLogo } from "~/components/HeroLogo";
 import { Reveal } from "~/components/Reveal";
 import { SearchBox } from "~/components/SearchBox";
 import { SiteFooter } from "~/components/SiteFooter";
 import { ViewToggle } from "~/components/ViewToggle";
-import { Wordmark } from "~/components/Wordmark";
 import { api } from "~/lib/api";
 import { parseView, titleItem, VIEW_PARAM } from "~/lib/game-view";
 import { fechaLegible, formatBytes, formatNumber } from "~/lib/format";
@@ -17,12 +17,15 @@ import { fechaLegible, formatBytes, formatNumber } from "~/lib/format";
 const LIMIT = 60;
 
 export const meta: MetaFunction = () => [
-  { title: "La biblioteca de Alucardio — Alucardio DataBase" },
+  { title: "La Biblioteca de Alucardio" },
   {
     name: "description",
     content:
       "Explora la biblioteca de juegos de Switch de tu cuenta MEGA: portadas, fichas IGDB, versiones, updates y DLC.",
   },
+  { name: "apple-mobile-web-app-title", content: "La Biblioteca de Alucardio" },
+  { property: "og:title", content: "La Biblioteca de Alucardio" },
+  { property: "og:site_name", content: "La Biblioteca de Alucardio" },
 ];
 
 function mkQuery(
@@ -106,11 +109,11 @@ export default function Home() {
   return (
     <>
       <h1 className="sr-only" id="page-title">
-        La biblioteca de Alucardio
+        La Biblioteca de Alucardio
       </h1>
 
       <Hero
-        wordmark={<Wordmark />}
+        logo={<HeroLogo />}
         meta={
           <>
             <b>{meta ? formatNumber(meta.titles) : "—"}</b> juegos ·{" "}

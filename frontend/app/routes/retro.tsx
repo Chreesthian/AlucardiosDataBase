@@ -13,7 +13,7 @@ import { edadLegible, formatBytes, formatNumber } from "~/lib/format";
 const LIMIT = 60;
 
 export const meta: MetaFunction = () => [
-  { title: "Retro — Alucardio DataBase" },
+  { title: "Retro — La Biblioteca de Alucardio" },
   {
     name: "description",
     content:

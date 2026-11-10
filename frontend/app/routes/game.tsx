@@ -29,10 +29,10 @@ const TITULO_VERSION: Record<string, string> = {
 
 export const meta: MetaFunction<typeof loader> = ({ data: loaded }) => {
   const detail = loaded?.detail;
-  if (!detail) return [{ title: "Juego no encontrado — Alucardio DataBase" }];
+  if (!detail) return [{ title: "Juego no encontrado — La Biblioteca de Alucardio" }];
   const oficial = detail.igdb_name?.trim();
   return [
-    { title: `${oficial || detail.name} — Alucardio DataBase` },
+    { title: `${oficial || detail.name} — La Biblioteca de Alucardio` },
     {
       name: "description",
       content:
