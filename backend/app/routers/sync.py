@@ -120,9 +120,9 @@ def status(request: Request, session: Session = Depends(get_session)) -> SyncSta
 def cuentas(request: Request) -> CuentasEstadoOut:
     """Pre-vuelo de rotación: ¿la cuenta MEGA de la semana ve la biblioteca?
 
-    El informe lo escribe el host (`scripts/verificar_rotacion.py`, vía
-    `make volcado` / `make volcado-cron`) en `data/estado_cuentas.json`. Sin
-    informe se responde 200 con `disponible=False`: la ausencia no es un fallo
+    El informe lo escribe la herramienta de refresco del host en
+    `data/estado_cuentas.json`. Sin informe se responde 200 con
+    `disponible=False`: la ausencia no es un fallo
     (el pre-vuelo se puede desactivar con `ALUCARD_PREFLIGHT=0`), así que la UI
     solo debe alarmar cuando `ok` es False y no se forzó el vaciado.
     """
@@ -134,7 +134,7 @@ def cuentas(request: Request) -> CuentasEstadoOut:
             disponible=False,
             aviso=(
                 f"Sin informe de pre-vuelo en {ruta}: se escribe al refrescar el volcado "
-                "en el host (`make volcado`)."
+                "en el host."
             ),
         )
 

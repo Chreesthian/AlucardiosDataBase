@@ -763,7 +763,7 @@ def recomendacion(cuentas: list[dict], comp: dict) -> list[str]:
             textos.append(
                 f"Biblioteca canónica `{grupo['etiqueta']}`: {cuentas_txt} alcanzan los MISMOS "
                 f"{grupo['titulos_union']} títulos → rotación segura, cualquiera sirve para "
-                "`make volcado-cron`."
+                "el cron de refresco del host."
             )
         else:
             completas = ", ".join(f"`{e}`" for e in grupo["cuentas_completas"]) or "(ninguna)"
@@ -788,7 +788,7 @@ def recomendacion(cuentas: list[dict], comp: dict) -> list[str]:
             if vig["titulos_que_aportarian_las_cuentas"]:
                 textos.append(
                     f"{vig['titulos_que_aportarian_las_cuentas']} títulos de la biblioteca canónica "
-                    "NO están en el volcado vigente: refresca el volcado y `make sync` los incorporará."
+                    "NO están en el volcado vigente: refresca el volcado y vuelve a escanearlo."
                 )
             else:
                 textos.append("El volcado canónico ya cubre todos los títulos de esa biblioteca.")
@@ -807,7 +807,7 @@ def recomendacion(cuentas: list[dict], comp: dict) -> list[str]:
             f"{grupo['titulos_union']} títulos de una colección distinta "
             f"({rv.human(sum(c.get('totales', {}).get('bytes', 0) for c in cuentas if c['email'] in grupo['cuentas']))}). "
             "No mezclar con el volcado canónico: si esas credenciales se usaran para "
-            "`make volcado-cron`, la guardia de sectores abortaría el refresco."
+            "el cron de refresco, la guardia de sectores abortaría el refresco."
         )
 
     if bibliotecas and not canonicas:

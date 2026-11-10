@@ -710,7 +710,7 @@ class RemoteMegaSetupService:
                 if not socket_path.exists():
                     raise MegaSetupUnavailable(
                         "El servicio de actualización del equipo no está en marcha. "
-                        "Arráncalo en el host con `make update-agent`."
+                        "Arráncalo en el host con `python scripts/agente_actualizacion.py`."
                     )
                 transporte = httpx.HTTPTransport(uds=str(socket_path))
                 with httpx.Client(
@@ -737,7 +737,7 @@ class RemoteMegaSetupService:
         except (httpx.HTTPError, OSError) as exc:
             raise MegaSetupUnavailable(
                 "El servicio de actualización del equipo no está en marcha. "
-                "Arráncalo en el host con `make update-agent`."
+                "Arráncalo en el host con `python scripts/agente_actualizacion.py`."
             ) from exc
         return self._leer(respuesta)
 

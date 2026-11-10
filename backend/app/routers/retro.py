@@ -3,7 +3,7 @@
 Las ROMs viven en OTRO in-share de MEGA (montado por otra cuenta del pool de
 rotación) y se indexan en su propia BD (`data/retro.db`, `ALUCARD_RETRO_DB_PATH`)
 a partir de su propio volcado (`mega_retro_contenido_MEGAcmd.txt`) con
-`app.sync --coleccion retro` (lo orquesta `scripts/volcado_retro.sh`).
+`app.sync --coleccion retro` (lo orquesta la herramienta de refresco del host).
 
 Estos endpoints NUNCA tocan el catálogo de Switch: leen `app.state.engine_retro`.
 Un volcado de ROMs ingerido por error en el catálogo de Switch lo cortaría el
@@ -52,7 +52,7 @@ def _require_snapshot(session: Session):
             status_code=404,
             detail=(
                 "La colección retro está vacía. Genera el volcado y escanéalo "
-                "(`make volcado-retro`)."
+                "con la herramienta de refresco del host."
             ),
         )
     return snap
@@ -193,8 +193,8 @@ def title_detail(slug: str, session: Session = Depends(get_session_retro)) -> Ti
 def sync_from_dump(request: Request, body: DumpRequest | None = None) -> SyncRunOut:
     """Escanea el volcado retro (o `body.path`) y aplica el diff en SU BD.
 
-    Es el equivalente retro de `POST /api/sync/dump`: el host refresca el volcado
-    (`scripts/volcado_retro.sh`) y pide aquí el escaneo para que se aplique ya. El
+    Es el equivalente retro de `POST /api/sync/dump`: la herramienta de refresco
+    del host actualiza el volcado y pide aquí el escaneo para que se aplique ya. El
     worker `backend-retro-sync` sigue siendo la red de seguridad (≤300 s).
     """
     cfg = getattr(request.app.state, "settings", None) or settings
@@ -278,11 +278,11 @@ def status(request: Request, session: Session = Depends(get_session_retro)) -> R
     )
     aviso = None
     if snap is None:
-        aviso = "Sin catálogo retro todavía: ejecuta `make volcado-retro`."
+        aviso = "Sin catálogo retro todavía: ejecuta la herramienta de refresco del host."
     elif not dump.exists() or fresca["obsoleto"]:
         aviso = (
             "El volcado retro está ausente o caducado: la sección se está quedando "
-            "congelada (revisa `make volcado-retro` y su cron)."
+            "congelada (revisa la herramienta de refresco del host)."
         )
     return RetroStatusOut(
         disponible=snap is not None,

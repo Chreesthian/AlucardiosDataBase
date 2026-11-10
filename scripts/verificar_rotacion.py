@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Pre-vuelo de rotación MEGA: ¿la cuenta de la semana ve LA MISMA biblioteca?
 
-Se ejecuta ANTES de `refrescar_volcado.py` (`scripts/autovolcado.sh`, por tanto
-también en `make volcado-cron`) y NO toca el volcado: solo comprueba que la
+Se ejecuta ANTES de `refrescar_volcado.py` (desde la herramienta de refresco
+del host) y NO toca el volcado: solo comprueba que la
 sesión activa monta el *in-share* del volcado vigente y que su raíz conserva los
 buckets conocidos.
 
@@ -383,7 +383,7 @@ def escribir_credenciales_preferidas(destino: Path, email: str, password: str) -
     """Persiste `email`/`password` como credencial preferida (chmod 600, fuera del repo).
 
     Mismo formato que `guardar_credenciales_mega` (`lib/mega_session.sh`), para que
-    `make credenciales` y el failover sean intercambiables.
+    la herramienta de credenciales del host y el failover sean intercambiables.
     """
     destino = destino.expanduser()
     destino.parent.mkdir(parents=True, exist_ok=True)

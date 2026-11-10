@@ -199,9 +199,9 @@ class SyncStatusOut(BaseModel):
 class CuentasEstadoOut(BaseModel):
     """Pre-vuelo de rotación MEGA: ¿la cuenta de la semana ve la biblioteca?
 
-    Informe que escribe el host (`scripts/verificar_rotacion.py`, vía
-    `make volcado`). `disponible=False` solo significa que no hay informe (pre-vuelo
-    desactivado o aún sin ejecutar) y NO es un fallo: la UI debe alarmar cuando
+    Informe que escribe la herramienta de refresco del host.
+    `disponible=False` solo significa que no hay informe (pre-vuelo desactivado o
+    aún sin ejecutar) y NO es un fallo: la UI debe alarmar cuando
     `ok` es False y no se forzó el vaciado.
     """
 

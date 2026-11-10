@@ -1,6 +1,6 @@
 """Auditoría de versiones 1:1 (local vs Nintendo).
 
-Investigación (docs/INVESTIGACION_VERSIONES.md):
+Referencia:
   - Local: base `B-ASE` + parches `U-PD/UP-D x.y.z…`; versión ofrecida = el máximo.
   - Nintendo EU SOLR resuelve NOMBRE → título-id Switch (`application_id_s`) y
     `nsuid`, pero NO expone la "versión actual" (vive en su CDN de actualizaciones;

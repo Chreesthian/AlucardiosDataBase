@@ -23,17 +23,17 @@ services:
       ALUCARD_DUMP_PATH: /dump/mega_cuenta_contenido_MEGAcmd.txt
       # Colección RETRO (ROMs): OTRA BD y OTRO volcado (otro in-share, otra cuenta
       # del pool). Se indexa y se sirve aparte para no contaminar el catálogo de
-      # Switch (ver `/api/retro/*` y `scripts/volcado_retro.sh`).
+      # Switch (ver `/api/retro/*`).
       ALUCARD_RETRO_DB_PATH: /data/retro.db
       ALUCARD_RETRO_DUMP_PATH: /dump-retro/mega_retro_contenido_MEGAcmd.txt
       ALUCARD_API_PORT: "7331"
       ALUCARD_CORS_ORIGINS: "http://localhost:${FRONTEND_PORT:-7330},http://127.0.0.1:${FRONTEND_PORT:-7330}"
-      # Pre-vuelo de rotación: el host (`make volcado`) deja su veredicto en el
-      # `data/` del repo y la API lo publica en `GET /api/sync/cuentas` para que
-      # la UI avise cuando las credenciales de la semana montan OTRA biblioteca.
+      # Pre-vuelo de rotación: la herramienta de refresco del host deja su
+      # veredicto en `data/` y la API lo publica en `GET /api/sync/cuentas` para
+      # que la UI avise cuando las credenciales de la semana montan OTRA biblioteca.
       ALUCARD_ESTADO_CUENTAS_PATH: /estado/estado_cuentas.json
       # Puente host: el contenedor no usa MEGAcmd; delega en el agente que corre
-      # en el equipo (make update-agent) por un socket Unix compartido en data/.
+      # en el equipo por un socket Unix compartido en data/.
       # El token es del agente, no de MEGA.
       ALUCARD_UPDATE_AGENT_SOCKET_PATH: /estado/update_agent.sock
       ALUCARD_UPDATE_AGENT_TOKEN_PATH: /estado/update_agent.token
@@ -49,8 +49,8 @@ services:
         source: ./data
         target: /estado
         read_only: true
-      # El volcado de ROMs retro vive en `data/` (lo escribe el host con
-      # `scripts/volcado_retro.sh`): mismo directorio, otra ruta de solo lectura.
+      # El volcado de ROMs retro vive en `data/` (lo escribe la herramienta de
+      # refresco del host): mismo directorio, otra ruta de solo lectura.
       # Montar el DIRECTORIO evita que Docker cree un directorio con el nombre
       # del fichero cuando aún no existe.
       - type: bind
@@ -143,8 +143,8 @@ services:
     # frescura del volcado y el hash; si cambió, sincroniza la BD y re-exporta
     # la biblioteca. Los títulos nuevos los enriquece backend-enrich solo.
     # `--max-edad 26`: el vigía NO puede refrescar la fuente (MEGAcmd vive en el
-    # host, ver `make volcado-cron`), así que si el volcado supera 26 h de
-    # antigüedad sale con rc=3 → Docker lo reinicia y el fallo se ve en
+    # host), así que si el volcado supera 26 h de antigüedad sale con rc=3 →
+    # Docker lo reinicia y el fallo se ve en
     # `docker compose ps` + logs (nada de "sin cambios" eternos en silencio).
     entrypoint: ["python", "-m", "app.sync"]
     command: ["--dump", "/dump/mega_cuenta_contenido_MEGAcmd.txt",
@@ -178,8 +178,8 @@ services:
     # Watcher de la colección RETRO (ROMs): vigila SU volcado (`data/mega_retro_…`)
     # y aplica el diff en SU BD (`/data/retro.db`) sin tocar el catálogo de Switch.
     # El refresco del volcado no puede hacerlo el contenedor (MEGAcmd vive en el
-    # host y la cuenta de las ROMs es otra del pool): lo orquesta
-    # `scripts/volcado_retro.sh` en el host, que además pide el escaneo por API.
+    # host y la cuenta de las ROMs es otra del pool): lo orquesta la herramienta
+    # de refresco del host, que además pide el escaneo por API.
     # `--max-edad 26` mantiene la misma regla: si el volcado retro se queda
     # caducado, este worker sale con rc=3 y el fallo se ve en `docker compose ps`.
     entrypoint: ["python", "-m", "app.sync"]

@@ -108,8 +108,8 @@ class Settings(BaseSettings):
     # ── Frescura del volcado (pipeline de actualización) ────
     # Edad máxima (horas) que puede tener el volcado canónico antes de que el
     # vigía `app.sync --watch` lo considere OBSOLETO y falle a propósito: si la
-    # automatización del refresco (scripts/autovolcado.sh, cron cada 6 h) se
-    # rompe, la BD se queda congelada sin avisar. 0 desactiva el guard.
+    # automatización del refresco del host se rompe, la BD se queda congelada
+    # sin avisar. 0 desactiva el guard.
     sync_max_edad_horas: int = 26
     # Fracción mínima de archivos que debe conservar un volcado para aplicarse
     # (protege de escrituras a medias y de bajadas masivas no intencionadas).
@@ -121,8 +121,8 @@ class Settings(BaseSettings):
     sync_min_titulos_fraccion: float = 0.9
 
     # ── Pre-vuelo de rotación MEGA (host) ──────────────────
-    # `scripts/verificar_rotacion.py` (host, vía `make volcado`) deja aquí su
-    # veredicto para que la API lo publique en `GET /api/sync/cuentas` y la UI
+    # La herramienta de refresco del host deja aquí su veredicto para que la
+    # API lo publique en `GET /api/sync/cuentas` y la UI
     # pueda avisar cuando las credenciales de la semana montan OTRA biblioteca.
     # Por defecto, junto a la BD (`data/estado_cuentas.json`); en Docker se monta
     # el `data/` del host en solo lectura y se apunta con esta variable.

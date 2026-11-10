@@ -164,7 +164,7 @@ def _remapear_prefijo(session: Session, sid: int, viejo: str, nuevo: str) -> Non
     Los `node_id` y el árbol (`parent_id`) no cambian, así que los títulos y su
     enriquecimiento IGDB sobreviven. Los enlaces de descarga cacheados apuntan al
     share antiguo: se reinician (`pendiente`) para volver a indexarlos contra el
-    share nuevo con `scripts/enlazar_descargas.sh`.
+    share nuevo con la herramienta de indexación de descargas.
     """
     largo = len(viejo)
     # Restos de una rotación previa a medio aplicar (evita chocar con el índice único).
@@ -703,8 +703,8 @@ def _huella(path: Path) -> str:
 
 # ── Frescura del volcado: el pipeline NO debe pararse en silencio ────────────
 # El vigía puede aplicar diffs, pero no puede regenerar la fuente; si el refresco
-# automático (scripts/autovolcado.sh vía cron) se rompe, el vigía seguiría
-# diciendo "sin cambios" indefinidamente. Por eso comprueba la edad del volcado
+# automático del host se rompe, el vigía seguiría diciendo "sin cambios"
+# indefinidamente. Por eso comprueba la edad del volcado
 # en CADA ciclo y, si está caducado, lo grita y sale con `EXIT_VOLCADO_OBSOLETO`
 # (Docker reinicia el worker → estado visible en `docker compose ps`).
 EXIT_VOLCADO_OBSOLETO = 3
@@ -819,8 +819,8 @@ def comprobar_frescura(path: Path, max_edad_horas: int, *, tolerar: bool = False
         f"VOLCADO OBSOLETO: {path} tiene {edad} h (límite {max_edad_horas} h; "
         f"cabecera={info['generated_at'] or 'sin fecha'}). El pipeline de "
         "actualización está PARADO: la BD, los escaneos y las novedades NO se "
-        "están actualizando. Refréscalo con `make volcado` "
-        "(scripts/refrescar_volcado.py) o automatízalo con `make volcado-cron`."
+        "están actualizando. Refréscalo con la herramienta de refresco del host "
+        "o automatízalo con su cron."
     )
     if tolerar:
         log.error("%s (se continúa: --seguir-si-obsoleto)", mensaje)

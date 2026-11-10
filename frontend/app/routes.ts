@@ -1,8 +1,8 @@
 import { type RouteConfig, index, route } from "@react-router/dev/routes";
 
 /**
- * Rutas del catálogo. Se conservan las URLs del frontend anterior para no
- * romper enlaces, la PWA ni la auditoría e2e (incluida la barra final).
+ * Rutas del catálogo. Se conservan las URLs públicas para no romper enlaces
+ * ni la PWA (incluida la barra final).
  */
 export default [
   index("routes/home.tsx"),

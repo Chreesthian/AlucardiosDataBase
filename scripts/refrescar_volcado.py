@@ -89,7 +89,7 @@ def _mega(args: list[str], mega_bin: Path, timeout: int) -> str:
 
     Los wrappers `mega-*` invocan `mega-exec`, así que el directorio de los
     binarios se antepone al PATH del proceso hijo (igual que
-    `scripts/enlazar_descargas.sh`).
+    la herramienta de indexación de descargas).
     """
     binario = _binario(args[0], mega_bin)
     entorno = os.environ.copy()
